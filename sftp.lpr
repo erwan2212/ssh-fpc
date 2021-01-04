@@ -14,24 +14,10 @@ uses
   {$ENDIF}
   windows,sysutils,classes,
   libssh2,libssh2_sftp,
-  blcksock;
-
-type
-
-  { TMyThread }
-
-  TReadThread=class(TThread)
-    private
-      FChannel:PLIBSSH2_CHANNEL;
-    protected
-      procedure Execute; override;
-    public
-      constructor Create(channel:PLIBSSH2_CHANNEL);
-    end;
+  winsock2;
 
 var
   debug:boolean=false;
-  sock:TTCPBlockSocket;
   session:PLIBSSH2_SESSION;
   fingerprint,userauthlist:PAnsiChar;
   tmp,s,ssend:string;
@@ -39,7 +25,6 @@ var
   sftp_session:PLIBSSH2_SFTP;
   sftp_handle:PLIBSSH2_SFTP_HANDLE;
   i:integer;
-  ReadThread:TReadThread;
   bNewString:boolean;
   //
   buffer:array[0..10000] of char;
@@ -53,7 +38,8 @@ var
   //
   hfile:thandle;
   size:dword;
-
+  //
+  sock:tsocket;
 
 procedure log(msg:string;level:byte=0);
 begin
@@ -75,34 +61,32 @@ begin
   Result := Round((dtDate - UnixStartDate) * 86400);
 end;
 
-{ TReadThread }
-procedure TReadThread.Execute;
+//previous version was using synapse
+//lets switch to winsock2
+function init_socket(var sock_:tsocket):boolean;
 var
-  buf:array[0..10000] of char;
-  len:integer;
+wsadata:TWSADATA;
+err:longint;
+hostaddr:u_long;
+sin:sockaddr_in;
 begin
-  libssh2_channel_set_blocking(channel,0);
-  while not Terminated do
-    begin
-    len:=libssh2_channel_read(channel,buf,10000);
-    if len>0 then
-      begin
-      write(copy(buf,1,len));
-      end
-    else if bNewString then
-      begin
-      libssh2_channel_write(channel,pchar(ssend),length(ssend));
-      bNewString:=false;
-      end
-    else
-      sleep(1000);
-    end;
-end;
+  result:=false;
+  //
+  err := WSAStartup(MAKEWORD(2, 0), wsadata);
+  if(err <> 0) then raise exception.Create ('WSAStartup failed with error: '+inttostr(err));
+  //
+  hostaddr := inet_addr(pchar(host));
+  //
+  sock_ := socket(AF_INET, SOCK_STREAM, 0);
+  //
+  sin.sin_family := AF_INET;
+  sin.sin_port := htons(22);
+  sin.sin_addr.s_addr := hostaddr;
+  if connect(sock_, tsockaddr(sin), sizeof(sockaddr_in)) <> 0
+     then raise exception.Create ('failed to connect');
+  //
+  result:=true;
 
-constructor TReadThread.Create(channel: PLIBSSH2_CHANNEL);
-begin
-  inherited Create(true);
-  FChannel:=channel;
 end;
 
 begin
@@ -116,20 +100,27 @@ begin
   password:=paramstr(3);
   verb:=paramstr(4);
   path:=paramstr(5);
-  sock := TTCPBlockSocket.Create;
-  sock.Connect(host,'22');
-  if sock.LastError=0 then
-    begin
+  //
+  try
+  if init_socket(sock)=false then begin writeln('socket failed');exit;end; ;
+  except
+  on e:exception do
+     begin
+     writeln(e.Message );
+     exit;
+     end;
+  end;
+  //
+
+  if 1=1 then begin
     log('libssh2_init...');
     if libssh2_init(0)<>0 then
       begin
       writeln('Cannot libssh2_init');
       exit;
       end;
-    { /* Create a session instance and start it up. This will trade welcome
-         * banners, exchange keys, and setup crypto, compression, and MAC layers
-         */
-         }
+    //* Create a session instance and start it up. This will trade welcome
+    //* banners, exchange keys, and setup crypto, compression, and MAC layers
     log('libssh2_session_init...');
     session := libssh2_session_init();
 
@@ -137,7 +128,7 @@ begin
     //libssh2_session_set_blocking(session, 0);
 
     log('libssh2_session_startup...');
-    if libssh2_session_startup(session, sock.Socket)<>0 then
+    if libssh2_session_startup(session, sock)<>0 then
       begin
       log('Cannot establishing SSH session',1);
       exit;
@@ -302,8 +293,9 @@ begin
     //
     libssh2_session_disconnect(session, 'bye');
     libssh2_session_free(session);
-    sock.Free;
-    end
+    //
+    closesocket(sock);
+    end //if 1=1
   else
     log('Cannot connect',1);
    libssh2_exit();
