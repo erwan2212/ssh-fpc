@@ -12,9 +12,10 @@ uses
   {$IFDEF UNIX}
   cthreads,
   {$ENDIF}
-  sysutils,classes,
+  windows,sysutils,classes,
   libssh2,
-  blcksock;
+  //blcksock,  //was using synapse before...
+  winsock2;
 
 type
 
@@ -31,7 +32,7 @@ type
 
 var
   debug:boolean=false;
-  sock:TTCPBlockSocket;
+  //bsock:TTCPBlockSocket;
   session:PLIBSSH2_SESSION;
   fingerprint,userauthlist:PAnsiChar;
   tmp,s,ssend:string;
@@ -44,6 +45,8 @@ var
   buflen:integer;
   //
   host,username,password,command:string;
+  //
+  sock:tsocket;
 
   procedure log(msg:string;level:byte=0);
 begin
@@ -82,6 +85,34 @@ begin
   FChannel:=channel;
 end;
 
+//previous version was using synapse
+//lets switch to winsock2
+function init_socket(var sock_:tsocket):boolean;
+var
+wsadata:TWSADATA;
+err:longint;
+hostaddr:u_long;
+sin:sockaddr_in;
+begin
+  result:=false;
+  //
+  err := WSAStartup(MAKEWORD(2, 0), wsadata);
+  if(err <> 0) then raise exception.Create ('WSAStartup failed with error: '+inttostr(err));
+  //
+  hostaddr := inet_addr(pchar(host));
+  //
+  sock_ := socket(AF_INET, SOCK_STREAM, 0);
+  //
+  sin.sin_family := AF_INET;
+  sin.sin_port := htons(22);
+  sin.sin_addr.s_addr := hostaddr;
+  if connect(sock_, tsockaddr(sin), sizeof(sockaddr_in)) <> 0
+     then raise exception.Create ('failed to connect');
+  //
+  result:=true;
+
+end;
+
 begin
   if Paramcount<2 then
     begin
@@ -90,9 +121,23 @@ begin
     end;
   host:=paramstr(1);
   username:=paramstr(2);
-  sock := TTCPBlockSocket.Create;
-  sock.Connect(host,'22');
-  if sock.LastError=0 then
+  {
+  bsock := TTCPBlockSocket.Create;
+  bsock.Connect(host,'22');
+  if bsock.LastError=0 then
+  }
+  //
+  try
+  if init_socket(sock)=false then begin writeln('socket failed');exit;end; ;
+  except
+  on e:exception do
+     begin
+     writeln(e.Message );
+     exit;
+     end;
+  end;
+  //
+  if 1=1 then
     begin
     log('libssh2_init...');
     if libssh2_init(0)<>0 then
@@ -111,13 +156,14 @@ begin
     //libssh2_session_set_blocking(session, 0);
 
     log('libssh2_session_startup...');
-    if libssh2_session_startup(session, sock.Socket)<>0 then
+    //if libssh2_session_startup(session, bsock.Socket)<>0 then
+    if libssh2_session_startup(session, sock)<>0 then
       begin
       log('Cannot establishing SSH session',1);
       exit;
       end;
 
-    //
+    //latest libssh2 version instead of libssh2_session_startup
     {
     if libssh2_session_handshake(session, sock.socket)<>0 then
       begin
@@ -136,10 +182,11 @@ begin
      * call
      */
     }
+    //not needed if you dont care about known hosts
     log('libssh2_hostkey_hash...');
     fingerprint := libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
     if fingerprint=nil then begin log('no fingerpint',1);exit;end;
-    write('Host fingerprint ');
+    log('Host fingerprint ');
     i:=0;
     //while fingerprint[i]<>#0 do
     for i:=0 to 19 do
@@ -150,6 +197,7 @@ begin
     log(tmp);
     log('Assuming known host...');
     //
+    //optional : only to check auth methods
     log('libssh2_userauth_list...');
     userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
     log(strpas(userauthlist));
@@ -224,7 +272,8 @@ begin
     libssh2_channel_free(channel);
     libssh2_session_disconnect(session,'bye');
     libssh2_session_free(session);
-    sock.Free;
+    //bsock.Free;
+    closesocket(sock);
     end
   else
     log('Cannot connect',1);

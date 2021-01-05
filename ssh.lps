@@ -9,12 +9,52 @@
         <Filename Value="ssh.lpr"/>
         <IsPartOfProject Value="True"/>
         <IsVisibleTab Value="True"/>
-        <TopLine Value="70"/>
-        <CursorPos X="88" Y="79"/>
+        <CursorPos X="45" Y="17"/>
         <UsageCount Value="20"/>
         <Loaded Value="True"/>
       </Unit0>
     </Units>
-    <JumpHistory HistoryIndex="-1"/>
+    <JumpHistory Count="10" HistoryIndex="9">
+      <Position1>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="111" Column="5" TopLine="83"/>
+      </Position1>
+      <Position2>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="18" Column="11" TopLine="3"/>
+      </Position2>
+      <Position3>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="49" Column="16" TopLine="24"/>
+      </Position3>
+      <Position4>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="35" Column="8" TopLine="20"/>
+      </Position4>
+      <Position5>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="124" Column="8" TopLine="110"/>
+      </Position5>
+      <Position6>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="125" Column="8" TopLine="111"/>
+      </Position6>
+      <Position7>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="126" Column="11" TopLine="112"/>
+      </Position7>
+      <Position8>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="145" Column="46" TopLine="131"/>
+      </Position8>
+      <Position9>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="35" Column="5" TopLine="21"/>
+      </Position9>
+      <Position10>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="160" Column="45" TopLine="145"/>
+      </Position10>
+    </JumpHistory>
   </ProjectSession>
 </CONFIG>
