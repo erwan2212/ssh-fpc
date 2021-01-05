@@ -19,16 +19,11 @@ uses
 var
   debug:boolean=false;
   session:PLIBSSH2_SESSION;
-  fingerprint,userauthlist:PAnsiChar;
-  tmp,s,ssend:string;
-  channel:PLIBSSH2_CHANNEL;
   sftp_session:PLIBSSH2_SFTP;
   sftp_handle:PLIBSSH2_SFTP_HANDLE;
+  fingerprint,userauthlist:PAnsiChar;
+  tmp,s:string;
   i:integer;
-  bNewString:boolean;
-  //
-  buffer:array[0..10000] of char;
-  buflen:integer;
   //
   host,username,password,verb,path:string;
   //
