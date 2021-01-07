@@ -44,7 +44,7 @@ var
   buffer:array[0..10000] of char;
   buflen:integer;
   //
-  host,username,password,command:string;
+  host,username,password,command,privatekey:string;
   //
   sock:tsocket;
 
@@ -208,6 +208,8 @@ begin
       readln(password);
       end
       else password:=paramstr(3);
+    if not FileExists (password) then
+    begin
     log('libssh2_userauth_password...');
     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
       begin
@@ -215,6 +217,21 @@ begin
       exit;
       end;
     log('Authentication succeeded');
+    end
+    else //if not FileExists (password) then
+    begin
+    privatekey:=password;
+    log('libssh2_userauth_publickey_fromfile');
+    //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
+    //public key can be derived from private key so public key can be skipped (good for security...)
+    //not relevant here but chmod 0700 id_rsa on a linux ssh client
+    i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
+    if i<>0 then
+      begin
+      log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
+      exit;
+      end;
+    end; //if not FileExists (password) then
     log('libssh2_channel_open_session...');
     //* Request a shell */
     channel := libssh2_channel_open_session(session);
