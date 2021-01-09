@@ -225,6 +225,8 @@ begin
     //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
     //public key can be derived from private key so public key can be skipped (good for security...)
     //not relevant here but chmod 0700 id_rsa on a linux ssh client
+    //not relevant but from a ssh linux client you can do:
+    //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
     i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
     if i<>0 then
       begin
