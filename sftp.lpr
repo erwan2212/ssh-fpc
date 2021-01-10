@@ -25,7 +25,7 @@ var
   tmp,s:string;
   i:integer;
   //
-  host,username,password,verb,path:string;
+  host,username,password,privatekey,verb,path:string;
   //
   mem:array [0..1023] of char;
   longentry:array [0..511] of char;
@@ -88,6 +88,7 @@ begin
   if Paramcount<2 then
     begin
     writeln('Usage: ',paramstr(0),' ip username password verb path [source]');
+    writeln('verb : rmdir mkdir put get dir');
     exit;
     end;
   host:=paramstr(1);
@@ -172,6 +173,7 @@ begin
       readln(password);
       end
       else password:=paramstr(3);
+    {
     log('libssh2_userauth_password...');
     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
       begin
@@ -179,7 +181,33 @@ begin
       exit;
       end;
     log('Authentication succeeded');
-
+    }
+    if not FileExists (password) then
+        begin
+        log('libssh2_userauth_password...');
+        if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
+          begin
+          log('Authentication by password failed',1);
+          exit;
+          end;
+        log('Authentication succeeded');
+        end
+        else //if not FileExists (password) then
+        begin
+        privatekey:=password;
+        log('libssh2_userauth_publickey_fromfile');
+        //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
+        //public key can be derived from private key so public key can be skipped (good for security...)
+        //not relevant here but chmod 0700 id_rsa on a linux ssh client
+        //not relevant but from a ssh linux client you can do:
+        //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
+        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
+        if i<>0 then
+          begin
+          log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
+          exit;
+          end;
+        end; //if not FileExists (password) then
     log('libssh2_sftp_init...');
     sftp_session := libssh2_sftp_init(session);
     if sftp_session=nil then
