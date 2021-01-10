@@ -218,7 +218,13 @@ begin
 
     //* Since we have not set non-blocking, tell libssh2 we are blocking */
      libssh2_session_set_blocking(session, 1);
-
+    //
+    if verb='rename' then
+    begin
+    log('libssh2_sftp_rename');
+      if libssh2_sftp_rename (sftp_session,pchar(path),pchar(paramstr(6) ))=0
+         then log('cannot libssh2_sftp_rename');
+    end;
     //
     if verb='rmdir' then
     begin
@@ -302,9 +308,12 @@ begin
        i := libssh2_sftp_readdir_ex(sftp_handle, @mem[0], sizeof(mem),longentry, sizeof(longentry), @attrs);
        if i>0 then
          begin
+         tmp:='';
          //log(strpas(@mem[0])+#9+inttostr(attrs^.filesize),1);
          if (attrs.flags and LIBSSH2_SFTP_ATTR_SIZE)=LIBSSH2_SFTP_ATTR_SIZE
-            then tmp:=inttostr(attrs.filesize ) else tmp:='';
+            then tmp:=inttostr(attrs.filesize ) ;
+         if (attrs.permissions and LIBSSH2_SFTP_S_IFMT) = LIBSSH2_SFTP_S_IFDIR
+            then tmp:='<DIR>';
          log(strpas(@mem[0])+#9+tmp+#9+DateTimeToStr (UnixToDateTime (attrs.mtime )),1);
          end
          else break;
