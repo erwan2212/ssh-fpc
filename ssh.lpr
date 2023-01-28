@@ -15,7 +15,8 @@ uses
   windows,sysutils,classes,
   libssh2,
   //blcksock,  //was using synapse before...
-  winsock2;
+  winsock2,
+  rcmdline in '..\rcmdline-master\rcmdline.pas';
 
 type
 
@@ -41,12 +42,14 @@ var
   ReadThread:TReadThread;
   bNewString:boolean;
   //
-  buffer:array[0..10000] of char;
+  buffer:array[0..10000-1] of char;
   buflen:integer;
   //
-  host,username,password,command,privatekey:string;
+  host,username,password,command,pty,privatekey:string;
   //
   sock:tsocket;
+  //
+  cmd: TCommandLineReader;
 
   procedure log(msg:string;level:byte=0);
 begin
@@ -58,16 +61,16 @@ end;
 
 procedure TReadThread.Execute;
 var
-  buf:array[0..10000] of char;
+  buf:array[0..10000-1] of char;
   len:integer;
 begin
   libssh2_channel_set_blocking(channel,0);
   while not Terminated do
     begin
-    len:=libssh2_channel_read(channel,buf,10000);
+    len:=libssh2_channel_read(channel,@buf[0],length(buffer));
     if len>0 then
       begin
-      write(copy(buf,1,len));
+      write(copy(buf,0,len));
       end
     else if bNewString then
       begin
@@ -114,13 +117,24 @@ begin
 end;
 
 begin
-  if Paramcount<2 then
+  cmd := TCommandLineReader.create;
+  cmd.declareString('ip', '192.168.1.254');
+  cmd.declareString('username', 'mandatory');
+  cmd.declareString('password', 'password or path to a pub key file, prompted if empty');
+  cmd.declareString('command', 'optional');
+  cmd.declareString('pty', 'true|false, default=true is no command provided');
+  cmd.parse(cmdline);
+
+  if cmd.existsProperty('ip')=false then
     begin
-    writeln('Usage: ',paramstr(0),' ip username password [command]',1);
+    writeln('Usage: ssh --help');
     exit;
     end;
-  host:=paramstr(1);
-  username:=paramstr(2);
+  host:=cmd.readString('ip');
+  username:=cmd.readString('username');
+  password:=cmd.readString('password');
+  command:=cmd.readString('command');
+  pty:=cmd.readString('pty');
   {
   bsock := TTCPBlockSocket.Create;
   bsock.Connect(host,'22');
@@ -202,12 +216,11 @@ begin
     userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
     log(strpas(userauthlist));
     //
-    if paramstr(3)='' then
+    if password='' then
       begin
       writeln('Password for ', host,' : ');
       readln(password);
-      end
-      else password:=paramstr(3);
+      end;
     if not FileExists (password) then
     begin
     log('libssh2_userauth_password...');
@@ -243,17 +256,19 @@ begin
       exit;
       end;
     //shell mode
-    if paramstr(4)='' then
+    if command='' then
     begin
     {/* Request a terminal with 'vanilla' terminal emulation
              * See /etc/termcap for more options
              */}
         log('libssh2_channel_request_pty...');
+        //vt100, vt102, vt220, and xterm -- vanilla
         if libssh2_channel_request_pty(channel, 'vanilla')<>0 then
           begin
           log('Cannot obtain pty',1);
           exit;
           end;
+        //libssh2_channel_request_pty_size(channel, 80, 24);
         //* Open a SHELL on that pty */
         log('libssh2_channel_shell...');
         if libssh2_channel_shell(channel)<>0 then
@@ -274,23 +289,65 @@ begin
     ReadThread.Terminate;
     end;
     //exec mode
-    if paramstr(4)<>'' then
+    if command<>'' then
     begin
-    //libssh2_channel_set_blocking(channel,0);
-    command:=paramstr(4);
-    log('libssh2_channel_exec...');
-    if libssh2_channel_exec(channel ,pchar(command))<>0
-       then log('cannot libssh2_channel_exec',1)
-       else
-       begin
-            while 1=1 do
-            begin
-            buflen:=libssh2_channel_read(channel,buffer,10000);
-            if buflen>0 then write(copy(buffer,1,buflen)); // else log('no output',1);
-            if buflen=0 then break;
-            end;
-       end;
-    end;
+      if pty<>'true' then
+      begin
+      //libssh2_channel_set_blocking(channel,0);
+      log('libssh2_channel_exec...');
+      if libssh2_channel_exec(channel ,pchar(command))<>0
+         then log('cannot libssh2_channel_exec',1)
+         else
+         begin
+              while 1=1 do
+              begin
+              buflen:=libssh2_channel_read(channel,@buffer[0],length(buffer));
+              //writeln(buflen);
+              if buflen>0 then write(copy(buffer,0,buflen)); // else log('no output',1);
+              if buflen=0 then break;
+              end;//while
+         end;//if libssh2_channel_exec
+      end;//if pty<>'true' then
+      if pty='true' then
+      begin
+      log('libssh2_channel_request_pty...');
+        //vt100, vt102, vt220, and xterm -- vanilla
+        if libssh2_channel_request_pty(channel, 'vanilla')<>0 then
+          begin
+          log('Cannot obtain pty',1);
+          exit;
+          end;
+        //libssh2_channel_request_pty_size(channel, 80, 24);
+        //* Open a SHELL on that pty */
+        log('libssh2_channel_shell...');
+        if libssh2_channel_shell(channel)<>0 then
+          begin
+          log('Cannot open shell',1);
+          exit;
+          end;
+        libssh2_channel_set_blocking(channel,0);
+        {
+        while 1=1 do
+              begin
+              buflen:=libssh2_channel_read(channel,buffer,10000);
+              if buflen>0 then write(copy(buffer,1,buflen));
+              if buflen=0 then break;
+              end;
+        }
+        buflen:=libssh2_channel_write(channel,pchar(command+#13#10),length(command+#13#10));
+        //writeln(buflen);
+        sleep(1000);
+        while 1=1 do
+              begin
+              buflen:=libssh2_channel_read(channel,@buffer[0],length(buffer));
+              //writeln(buflen);
+              if buflen>0 then write(copy(buffer,0,buflen));
+              if buflen<=0 then break;
+              end;
+        sleep(1000);
+        buflen:=libssh2_channel_write(channel,pchar('exit#1310'),length('exit#1310'));
+      end;//if pty='false' hten
+    end;//if command<>'' then
     //
     libssh2_channel_free(channel);
     libssh2_session_disconnect(session,'bye');
