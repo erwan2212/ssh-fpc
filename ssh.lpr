@@ -283,8 +283,12 @@ begin
        then log('cannot libssh2_channel_exec',1)
        else
        begin
-       buflen:=libssh2_channel_read(channel,buffer,10000);
-       if buflen>0 then write(copy(buffer,1,buflen)) else log('no output',1);
+            while 1=1 do
+            begin
+            buflen:=libssh2_channel_read(channel,buffer,10000);
+            if buflen>0 then write(copy(buffer,1,buflen)); // else log('no output',1);
+            if buflen=0 then break;
+            end;
        end;
     end;
     //
