@@ -31,6 +31,9 @@ type
       constructor Create(channel:PLIBSSH2_CHANNEL);
     end;
 
+  Type
+  TArrayStr = Array Of string;
+
 var
   debug:boolean=false;
   //bsock:TTCPBlockSocket;
@@ -42,14 +45,15 @@ var
   ReadThread:TReadThread;
   bNewString:boolean;
   //
-  buffer:array[0..10000-1] of char;
-  buflen:integer;
+  buffer:array[0..8192-1] of char;
+  buflen,delay:integer;
   //
   host,username,password,command,pty,privatekey:string;
   //
   sock:tsocket;
   //
   cmd: TCommandLineReader;
+  commands:TArrayStr ;
 
   procedure log(msg:string;level:byte=0);
 begin
@@ -61,7 +65,7 @@ end;
 
 procedure TReadThread.Execute;
 var
-  buf:array[0..10000-1] of char;
+  buf:array[0..8192-1] of char;
   len:integer;
 begin
   libssh2_channel_set_blocking(channel,0);
@@ -78,7 +82,7 @@ begin
       bNewString:=false;
       end
     else
-      sleep(1000);
+      sleep(delay);
     end;
 end;
 
@@ -116,6 +120,35 @@ begin
 
 end;
 
+function SplitString(Text: String;Delimiter : char): TArrayStr;
+var
+   intIdx: Integer;
+   intIdxOutput: Integer;
+begin
+   intIdxOutput := 0;
+   SetLength(Result, 1);
+   Result[intIdxOutput] := '';
+
+   for intIdx := 1 to Length(Text) do
+   begin
+      if Text[intIdx] = Delimiter then
+      begin
+         intIdxOutput := intIdxOutput + 1;
+         SetLength(Result, Length(Result) + 1);
+      end
+      else
+         Result[intIdxOutput] := Result[intIdxOutput] + Text[intIdx];
+   end;
+end;
+
+procedure Split(const Delimiter: Char; Input: string; const Strings: TStrings);
+begin
+   Assert(Assigned(Strings)) ;
+   Strings.Clear;
+   Strings.Delimiter := Delimiter;
+   Strings.DelimitedText := Input;
+end;
+
 begin
   cmd := TCommandLineReader.create;
   cmd.declareString('ip', '192.168.1.254');
@@ -123,7 +156,11 @@ begin
   cmd.declareString('password', 'password or path to a pub key file, prompted if empty');
   cmd.declareString('command', 'optional');
   cmd.declareString('pty', 'true|false, default=true is no command provided');
+  cmd.declareString('debug', 'true|false','false');
+  cmd.declareInt ('delay', 'delay between 2 read/write',1000);
   cmd.parse(cmdline);
+
+
 
   if cmd.existsProperty('ip')=false then
     begin
@@ -135,6 +172,11 @@ begin
   password:=cmd.readString('password');
   command:=cmd.readString('command');
   pty:=cmd.readString('pty');
+  debug:= cmd.readString('debug')='true';
+  delay:=cmd.readInt ('delay');
+
+  commands:=SplitString(command,';');
+
   {
   bsock := TTCPBlockSocket.Create;
   bsock.Connect(host,'22');
@@ -326,27 +368,33 @@ begin
           exit;
           end;
         libssh2_channel_set_blocking(channel,0);
-        {
+        //the banner...
         while 1=1 do
               begin
-              buflen:=libssh2_channel_read(channel,buffer,10000);
-              if buflen>0 then write(copy(buffer,1,buflen));
-              if buflen=0 then break;
+              buflen:=libssh2_channel_read(channel,@buffer[0],length(buffer));
+              if buflen>0 then write(copy(buffer,0,buflen));
+              if buflen<=0 then break;
               end;
-        }
-        buflen:=libssh2_channel_write(channel,pchar(command+#13#10),length(command+#13#10));
+        sleep(delay);
+        //
+        for i:=0 to length(commands) -1 do
+        begin
+        if commands[i]<>'' then
+        begin
+        buflen:=libssh2_channel_write(channel,pchar(commands[i]+#13#10),length(commands[i]+#13#10));
         //writeln(buflen);
-        sleep(1000);
+        sleep(delay);
         while 1=1 do
               begin
               buflen:=libssh2_channel_read(channel,@buffer[0],length(buffer));
               //writeln(buflen);
               if buflen>0 then write(copy(buffer,0,buflen));
               if buflen<=0 then break;
-              end;
-        sleep(1000);
-        buflen:=libssh2_channel_write(channel,pchar('exit#1310'),length('exit#1310'));
-      end;//if pty='false' hten
+              end;//while
+        //sleep(delay);
+        end;//if commands[i]<>'' then
+        end;//for i:=0 to length(commands) -1 do
+      end;//if pty='true' then
     end;//if command<>'' then
     //
     libssh2_channel_free(channel);
