@@ -14,7 +14,8 @@ uses
   {$ENDIF}
   windows,sysutils,classes,
   libssh2,libssh2_sftp,
-  winsock2;
+  winsock2,
+  rcmdline in '..\rcmdline-master\rcmdline.pas';
 
 var
   debug:boolean=false;
@@ -25,7 +26,8 @@ var
   tmp,s:string;
   i:integer;
   //
-  host,username,password,privatekey,verb,path:string;
+  host,username,password,privatekey,verb,path,local_filename,dest_filename:string;
+  port:integer=22;
   //
   mem:array [0..1023] of char;
   longentry:array [0..511] of char;
@@ -35,6 +37,8 @@ var
   size:dword;
   //
   sock:tsocket;
+  //
+  cmd: TCommandLineReader;
 
 procedure log(msg:string;level:byte=0);
 begin
@@ -75,7 +79,7 @@ begin
   sock_ := socket(AF_INET, SOCK_STREAM, 0);
   //
   sin.sin_family := AF_INET;
-  sin.sin_port := htons(22);
+  sin.sin_port := htons(port);
   sin.sin_addr.s_addr := hostaddr;
   if connect(sock_, tsockaddr(sin), sizeof(sockaddr_in)) <> 0
      then raise exception.Create ('failed to connect');
@@ -85,17 +89,34 @@ begin
 end;
 
 begin
-  if Paramcount<2 then
+
+  cmd := TCommandLineReader.create;
+  cmd.declareString('ip', '192.168.1.254');
+  cmd.declareInt('port', '22',22);
+  cmd.declareString('username', 'mandatory');
+  cmd.declareString('password', 'password or path to a pub key file, prompted if empty');
+  cmd.declareString('command', 'rmdir mkdir put get dir');
+  cmd.declareString('path', 'remote path','/');
+  cmd.declareString('local_filename', 'optional, local path');
+  cmd.declareString('dest_filename', 'optional, remote path');
+  cmd.declareString('debug', 'true|false','false');
+  cmd.parse(cmdline);
+
+  if cmd.existsProperty('ip')=false then
     begin
-    writeln('Usage: ',paramstr(0),' ip username password verb path [source]');
-    writeln('verb : rmdir mkdir put get dir');
+    writeln('Usage: ssh --help');
     exit;
     end;
-  host:=paramstr(1);
-  username:=paramstr(2);
-  password:=paramstr(3);
-  verb:=paramstr(4);
-  path:=paramstr(5);
+
+  host:=cmd.readstring('ip');
+  port:=cmd.readint('port');
+  username:=cmd.readstring('username');
+  password:=cmd.readstring('password');
+  verb:=cmd.readstring('command');
+  path:=cmd.readstring('path');
+  local_filename:=cmd.readstring('local_filename');
+  dest_filename:=cmd.readstring('dest_filename');
+  debug:= cmd.readString('debug')='true';
   //
   try
   if init_socket(sock)=false then begin writeln('socket failed');exit;end; ;
@@ -167,12 +188,11 @@ begin
     userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
     log(strpas(userauthlist));
     //
-    if paramstr(3)='' then
+    if password='' then
       begin
       write('Password for ', host,' : ');
       readln(password);
-      end
-      else password:=paramstr(3);
+      end;
     {
     log('libssh2_userauth_password...');
     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
@@ -222,7 +242,7 @@ begin
     if verb='rename' then
     begin
     log('libssh2_sftp_rename');
-      if libssh2_sftp_rename (sftp_session,pchar(path),pchar(paramstr(6) ))=0
+      if libssh2_sftp_rename (sftp_session,pchar(path),pchar(dest_filename ))=0
          then log('cannot libssh2_sftp_rename');
     end;
     //
@@ -231,6 +251,7 @@ begin
     //* Make a directory via SFTP */
     log('libssh2_sftp_rmdir');
     i := libssh2_sftp_rmdir(sftp_session, pchar(path));
+    if i<>0 then log('libssh2_sftp_rmdir failed:'+inttostr(i),1);
     end;
     //
     if verb='mkdir' then
@@ -241,6 +262,7 @@ begin
                             LIBSSH2_SFTP_S_IRWXU or
                             LIBSSH2_SFTP_S_IRGRP or LIBSSH2_SFTP_S_IXGRP or
                             LIBSSH2_SFTP_S_IROTH or LIBSSH2_SFTP_S_IXOTH);
+    if i<>0 then log('libssh2_sftp_mkdir failed:'+inttostr(i),1);
     end;
     //
     if verb='put' then
@@ -255,14 +277,15 @@ begin
           log('cannot libssh2_sftp_open',1);
           exit;
           end;
-    hfile := CreateFile(pchar(paramstr(6)), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
-    if hfile=thandle(-1) then begin log('invalid handle');exit;end;
+    hfile := CreateFile(pchar(local_filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
+    if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
     while 1=1 do
       begin
       ReadFile (hfile,mem[0],sizeof(mem),size,nil);
       if size<=0 then break;
       i := libssh2_sftp_write(sftp_handle, @mem[0], size);
       if (i<>size) then begin log('libssh2_sftp_write error',1);break;end;
+      log('libssh2_sftp_write:'+inttostr(i)+' bytes');
       end; //while 1=1 do
     closehandle(hfile);
     libssh2_sftp_close(sftp_handle);
@@ -278,7 +301,8 @@ begin
           log('cannot libssh2_sftp_open',1);
           exit;
           end;
-    hfile := CreateFile(pchar(ExtractFileName (path)), GENERIC_READ or GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE, nil, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0);
+    if local_filename ='' then local_filename:=ExtractFileName (path);
+    hfile := CreateFile(pchar(local_filename ), GENERIC_READ or GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if hfile=thandle(-1) then begin log('invalid handle');exit;end;
     while 1=1 do
       begin
@@ -287,6 +311,7 @@ begin
          begin
          //log(strpas(@mem[0]),1);
          WriteFile(hfile, mem[0], i, size, nil);
+         log('libssh2_sftp_read:'+inttostr(i)+' bytes');
          end
          else break;
       end; //while 1=1 do
@@ -329,8 +354,9 @@ begin
     closesocket(sock);
     end //if 1=1
   else
-    log('Cannot connect',1);
-   libssh2_exit();
+  log('Cannot connect',1);
+  libssh2_exit();
+  log('done');
 end.
 
 
