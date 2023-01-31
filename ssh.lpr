@@ -391,7 +391,7 @@ begin
   buflen:=libssh2_channel_read(channel_,@buffer[0],length(buffer));
   //writeln(buflen);
   if buflen>0 then write(copy(buffer,0,buflen)); // else log('no output',1);
-  if buflen=0 then break;
+  if buflen<=0 then break;
   end;//while
 end;//if libssh2_channel_exec
 end;
