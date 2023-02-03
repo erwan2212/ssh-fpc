@@ -140,8 +140,8 @@ begin
 end;
 
 ///etc/ssh/sshd_config -> GatewayPorts yes is you want to have the remote port open to the whole word (localhost only by default)
-//also check allowtcpforwarding ?
-//sudo netstat -ap | grep :<port_number>
+//also check allowtcpforwarding ? seems not needed
+//sudo netstat -ap | grep :<port_number> to check port is open on remote ssh server
 //direct-tcpip is what ssh -L uses,
 //and forward-tcpip is what ssh -R uses.
 function forward_tcpip(server_ip,username,password,local_destip:string;local_destport:integer):boolean;
@@ -193,7 +193,7 @@ begin
     if (connect(sock, sin, sizeof(sockaddr_in)) <> 0) then raise exception.create('failed to connect!');
 
     //* Create a session instance */
-    log('libssh2_session_startup...,1');
+    log('libssh2_session_init...,1');
     session := libssh2_session_init();
 
     if session=nil then raise exception.create ('Could not initialize SSH session!');
@@ -324,6 +324,197 @@ begin
     log('done.',1);
 
 end;
+
+//direct-tcpip is what ssh -L uses,
+//and forward-tcpip is what ssh -R uses.
+function direct_tcpip(server_ip,username,password,remote_desthost:string;remote_destport:integer):boolean;
+var
+   tmp:string;
+   rc,sinlen,i,sockopt :integer;
+   sock,listensock,forwardsock :TSocket;
+   sin:TSockAddr;
+   session:PLIBSSH2_SESSION;
+   fingerprint,userauthlist:pansichar;
+   //listener:PLIBSSH2_LISTENER;
+   channel:PLIBSSH2_CHANNEL;
+   //
+   fds:TFDSet;
+   tv:timeval;
+   len, wr:integer;
+   buf:array [0..16384-1] of char;
+   //
+
+   local_listenip:string = '0.0.0.0';
+   local_listenport:integer=2222;
+
+   shost:string;
+   sport:integer;
+   //
+   wsadata:TWSADATA;
+   //
+   label shutdown;
+begin
+    //
+    rc := WSAStartup(MAKEWORD(2, 0), wsadata);
+    if(rc <> 0) then raise exception.Create ('WSAStartup failed with error: '+inttostr(rc));
+    //
+    log('libssh2_init...',1);
+    rc := libssh2_init(0);
+    if(rc <> 0) then raise exception.create('libssh2 initialization failed');
+
+    //* Connect to SSH server */
+    sock := socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sock = INVALID_SOCKET)  then raise exception.create('failed to open socket!');
+
+    sin.sin_family := AF_INET;
+    sin.sin_addr.s_addr := inet_addr(pchar(server_ip));
+    if (INADDR_NONE = sin.sin_addr.s_addr)  then raise exception.create('inet_addr');
+    sin.sin_port := htons(22);
+
+    if (connect(sock, sin, sizeof(sockaddr_in)) <> 0) then raise exception.create('failed to connect!');
+
+    //* Create a session instance */
+    log('libssh2_session_init...');
+    session := libssh2_session_init();
+
+    if session=nil then raise exception.create ('Could not initialize SSH session!');
+
+    //* ... start it up. This will trade welcome banners, exchange keys,
+    // * and setup crypto, compression, and MAC layers
+    // */
+    rc := libssh2_session_handshake(session, sock);
+
+    if (rc<>0) then raise exception.create ('Error when starting up SSH session');
+
+    //* At this point we havn't yet authenticated.  The first thing to do
+    //     * is check the hostkey's fingerprint against our known hosts Your app
+    //     * may have it hard coded, may go to a file, may present it to the
+    //     * user, that's your call
+    //     */
+        fingerprint := libssh2_hostkey_hash(session, LIBSSH2_HOSTKEY_HASH_SHA1);
+        for i:=0 to 19 do tmp:=tmp+inttohex(ord(fingerprint[i]),2)+ ':';
+        log('fingerprint:'+tmp);
+
+    ///* check what authentication methods are available */
+        userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
+
+     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0
+                then raise exception.create ('Authentication by password failed.');
+     {
+     if libssh2_userauth_publickey_fromfile(session, username, keyfile1,keyfile2, password)<>0 then ;
+                then raise exception.create ('Authentication by public key failed!');
+     }
+
+     listensock  := socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+     if listensock  = INVALID_SOCKET then raise exception.create ('failed to open forward socket!');
+
+     sin.sin_family := AF_INET;
+     sin.sin_port := htons(local_listenport);
+     sin.sin_addr.s_addr := inet_addr(pchar(local_listenip));
+     if INADDR_NONE = sin.sin_addr.s_addr then raise exception.create ('inet_addr');
+
+    sockopt := 1;
+    setsockopt(listensock, SOL_SOCKET, SO_REUSEADDR, sockopt,sizeof(sockopt));
+    sinlen := sizeof(sin);
+    if -1 = bind(listensock, sin, sinlen) then raise exception.create('bind');
+
+    if -1 = listen(listensock, 2) then raise exception.create('listen');
+
+    log('Waiting for TCP connection on ...'+ inet_ntoa(sin.sin_addr) +':' + inttostr( ntohs(sin.sin_port)));
+
+    forwardsock := accept(listensock, @sin, sinlen);
+    if forwardsock = INVALID_SOCKET then raise exception.create('failed to accept forward socket!');
+
+    shost := inet_ntoa(sin.sin_addr);
+    sport := ntohs(sin.sin_port);
+
+    log('Forwarding connection from here to remote '+ shost+':'+inttostr(sport)+' '+ remote_desthost+':'+inttostr(remote_destport));
+
+    channel := libssh2_channel_direct_tcpip_ex(session, pchar(remote_desthost),remote_destport, pchar(shost), sport);
+
+    if channel=nil then raise exception.create('Could not open the direct-tcpip channel!'
+                              +#13#10+'(Note that this can be a problem at the server!'
+                              +#13#10+'Please review the server logs.)');
+
+    //* Must use non-blocking IO hereafter due to the current libssh2 API */
+    libssh2_session_set_blocking(session, 0);
+
+     while 1=1 do
+       begin
+             FD_ZERO(fds);
+             FD_SET(forwardsock, fds);
+             tv.tv_sec := 0;
+             tv.tv_usec := 100000;
+             rc := select(forwardsock + 1, @fds, nil, nil, @tv);
+             if -1 = rc then
+                begin
+                log('select');
+                goto shutdown;
+                end;
+
+             if (rc<>0) and (FD_ISSET(forwardsock, fds)) then
+             begin
+                 len := recv(forwardsock, @buf[0], sizeof(buf), 0);
+                 if(len < 0)
+                        then raise exception.create('read')
+                        else if (0 = len) then
+                        begin
+                        log('The client disconnected! '+shost+':'+inttostr(sport),1);
+                        goto shutdown;
+                        end;
+                 if len>0 then log('recv:'+inttostr(len)+' bytes');
+                 wr := 0;
+                 while wr<len do
+                   begin
+                     i := libssh2_channel_write(channel, @buf[wr], len-wr);
+                     if i>0 then log('libssh2_channel_write:'+inttostr(i)+' bytes');
+                     if i=len then break; //buffer has been sent
+                     if(i < 0) then
+                          begin
+                          log('libssh2_channel_write: '+inttostr(i));
+                          //goto shutdown;
+                          break;
+                          end;
+                     wr := wr+i;
+                   end;
+
+             end; //if (rc<>0) and (FD_ISSET(forwardsock, fds)) then
+
+             while 1=1 do
+             begin
+                 len := libssh2_channel_read(channel, @buf[0], sizeof(buf));
+                 if LIBSSH2_ERROR_EAGAIN = len
+                    then break
+                    else if(len < 0) then raise exception.create('libssh2_channel_read:'+inttostr(len));
+                 if len>0 then log('libssh2_channel_read:'+inttostr(len)+' bytes');
+                 wr := 0;
+                 while(wr < len) do
+                 begin
+                     i := send(forwardsock, buf[wr], len - wr, 0);
+                     if(i <= 0) then raise exception.create('write');
+                     wr := wr+i;
+                 end;
+                 if wr>0 then log('send:'+inttostr(wr)+' bytes');
+                 if libssh2_channel_eof(channel)<>0 then
+                    begin
+                    log('The remote client at disconnected!',1);
+                    goto shutdown;
+                    end;
+             end;
+         end;
+     shutdown:
+     closesocket(forwardsock);
+     closesocket(listensock);
+
+    if (channel<>nil) then libssh2_channel_free(channel);
+
+    libssh2_session_disconnect(session, 'Client disconnecting normally');
+    libssh2_session_free(session);
+    libssh2_exit();
+    log('done.',1);
+
+end;
+
 
 procedure execpty(channel_:PLIBSSH2_CHANNEL;command_:string);
 var
@@ -577,6 +768,8 @@ end;
 begin
 
 
+
+
   cmd := TCommandLineReader.create;
   cmd.declareString('ip', '192.168.1.254');
   cmd.declareInt('port', '22',22);
@@ -587,8 +780,9 @@ begin
   cmd.declareString('debug', 'true|false','false');
   cmd.declareInt ('delay', 'delay between 2 read/write in command+pty mode',1000);
   cmd.declareflag('reverse', 'reverse forwarding');
-  cmd.declareString('destip', 'forward mode','127.0.0.1');
-  cmd.declareint('destport', 'forward mode',80);
+  cmd.declareflag('local', 'local forwarding');
+  cmd.declareString('destip', 'forward mode (local or reverse)');
+  cmd.declareint('destport', 'forward mode (local or reverse');
   cmd.parse(cmdline);
 
   if cmd.existsProperty('ip')=false then
@@ -606,14 +800,22 @@ begin
   debug:= cmd.readString('debug')='true';
   delay:=cmd.readInt ('delay');
 
-
-
   if cmd.existsProperty ('reverse') then
      begin
-     //forward_tcpip ('192.168.1.129','jeedom','Mjeedom96','127.0.0.1',80);
+     //remote ssh server will listen on port 2222 and forward traffic from localhost:2222 to remotehost:remoteport
+     //forward_tcpip ('192.168.1.129','jeedom','Mjeedom96','www.google.com',80);
      forward_tcpip (host,username,password,cmd.readString('destip'),cmd.readint('destport'));
      exit;
      end;
+
+  if cmd.existsProperty ('local') then
+     begin
+     //local host will list on port 2222 and forward traffic from localhost:2222 to remotehost:remoteport via ssh server
+     //forward_tcpip ('192.168.1.129','jeedom','Mjeedom96','www.google.com',80);
+     direct_tcpip (host,username,password,cmd.readString('destip'),cmd.readint('destport'));
+     exit;
+     end;
+
 
 
  //
