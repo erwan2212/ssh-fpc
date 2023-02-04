@@ -15,6 +15,7 @@ uses
   windows,sysutils,classes,
   libssh2,
   winsock2,
+  libeay32,
   rcmdline in '..\rcmdline-master\rcmdline.pas';
 
 type
@@ -39,17 +40,98 @@ var
   ssend:string;
   delay:integer;
   //
-  host,username,password,command,pty,privatekey:string;
+  host,username,password,command,pty,privatekey,publickey:string;
   port:integer=22;
   //
   cmd: TCommandLineReader;
 
-
-  procedure log(msg:string;level:byte=0);
+procedure log(msg:string;level:byte=0);
 begin
-  if (level=0) and (debug=false) then exit;
-  writeln(msg);
+if (level=0) and (debug=false) then exit;
+writeln(msg);
 end;
+
+procedure LoadSSL;
+begin
+  OpenSSL_add_all_algorithms;
+  OpenSSL_add_all_ciphers;
+  OpenSSL_add_all_digests;
+  ERR_load_crypto_strings;
+  ERR_load_RSA_strings;
+end;
+
+
+procedure FreeSSL;
+begin
+  EVP_cleanup;
+  ERR_free_strings;
+end;
+
+//on the remote ssh server, generate the pub key from the private key generated on the client
+//ssh-keygen -y -f private.pem > key.pub
+//copy the pub key to the authorized keys
+//cat key.pub >> ~/.ssh/authorized_keys
+//should work as well : ssh-copy-id -i /path/to/key/file user@host.com
+//Remember that .ssh folder has to be 700. The authorized_keys file should be 600
+//or the other way (no success here for now)
+//on the remote ssh server, generate a key pair
+//ssh-keygen -b 2048 -t rsa -m PEM
+//and use either the pub or priv key from there
+function generate_key:boolean;
+var
+
+	ret:integer; //= 0;
+	r:pRSA;//				 = nil;
+	bne:pBIGNUM;// = nil;
+	bp_public:pBIO;// = nil;
+  bp_private:pBIO;// = nil;
+
+	bits:integer; // = 2048;
+	e:ulong; // = RSA_F4;
+  label free_all;
+begin
+  //
+  ret:=0;
+  r:=nil;
+  bne:=nil;
+  bp_public :=nil;
+  bp_private :=nil;
+  bits:=2048;
+  e :=RSA_F4;
+	// 1. generate rsa key
+	bne := BN_new();
+	ret := BN_set_word(bne,e);
+	if ret <> 1 then goto free_all;
+
+	r := RSA_new();
+	ret := RSA_generate_key_ex(r, bits, bne, nil);
+	if ret <> 1 then goto free_all;
+        log('1. generate rsa key OK');
+
+
+
+	// 2. save public key
+	bp_public := BIO_new_file(pchar(GetCurrentDir+'\public.pem'), 'w+');
+	ret := PEM_write_bio_RSAPublicKey(bp_public, r);
+	if ret <>1 then goto free_all;
+        log('2. save public key OK');
+
+	// 3. save private key
+	bp_private := BIO_new_file(pchar(GetCurrentDir+'\private.pem'), 'w+');
+	ret := PEM_write_bio_RSAPrivateKey(bp_private, r, nil, nil, 0, nil, nil);
+        log('3. save private key');
+
+	// 4. free
+free_all:
+
+	BIO_free_all(bp_public);
+	BIO_free_all(bp_private);
+	RSA_free(r);
+	BN_free(bne);
+
+	if ret=1 then result:=true else result:=false;
+end;
+
 
 { TReadThread }
 
@@ -707,12 +789,12 @@ begin
     userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
     log(strpas(userauthlist));
     //
-    if password='' then
+    if ((privatekey='') and (publickey='')) and (password='') then
       begin
       writeln('Password for ', host,' : ');
       readln(password);
       end;
-    if not FileExists (password) then
+    if ((privatekey='') and (publickey='')) and (password<>'') then
     begin
     log('libssh2_userauth_password...');
     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
@@ -721,17 +803,21 @@ begin
       exit;
       end;
     log('Authentication succeeded');
-    end
-    else //if not FileExists (password) then
+    end;
+    if (privatekey<>'') or (publickey<>'') then
     begin
-    privatekey:=password;
     log('libssh2_userauth_publickey_fromfile');
     //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
     //public key can be derived from private key so public key can be skipped (good for security...)
     //not relevant here but chmod 0700 id_rsa on a linux ssh client
     //not relevant but from a ssh linux client you can do:
     //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
-    i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
+    log('private key:'+privatekey );
+    log('public key:'+publickey  );
+    if privatekey<>'' then
+        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(publickey)},pchar(privatekey),nil);
+    if publickey<>'' then
+        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),nil{pchar(privatekey)},nil);
     if i<>0 then
       begin
       log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
@@ -774,16 +860,32 @@ begin
   cmd.declareString('ip', '192.168.1.254');
   cmd.declareInt('port', '22',22);
   cmd.declareString('username', 'mandatory');
-  cmd.declareString('password', 'password or path to a pub key file, prompted if empty');
+  cmd.declareString('password', 'password');
+  cmd.declareString('privatekey', 'path to a privatekey file');
+  cmd.declareString('publickey', 'path to a publickey file, not needed if you have the privatekey');
   cmd.declareString('command', 'optional, if none enter shell mode');
   cmd.declareString('pty', 'true|false, default=true is no command provided');
   cmd.declareString('debug', 'true|false','false');
   cmd.declareInt ('delay', 'delay between 2 read/write in command+pty mode',1000);
   cmd.declareflag('reverse', 'reverse forwarding');
+  cmd.declareflag('genkey', 'generate public.pem and private.pem');
   cmd.declareflag('local', 'local forwarding');
   cmd.declareString('destip', 'forward mode (local or reverse)');
   cmd.declareint('destport', 'forward mode (local or reverse');
   cmd.parse(cmdline);
+
+  debug:= cmd.readString('debug')='true';
+
+  if cmd.existsProperty('genkey')=true then
+    begin
+    try
+    LoadSSL;
+    if generate_key=true then writeln('ok') else writeln('not ok');
+    finally
+    FreeSSL;
+    end;
+    exit;
+    end;
 
   if cmd.existsProperty('ip')=false then
     begin
@@ -795,9 +897,10 @@ begin
   port:=cmd.readint('port');
   username:=cmd.readString('username');
   password:=cmd.readString('password');
+  privatekey:=cmd.readString('privatekey');
+  publickey:=cmd.readString('publickey');
   command:=cmd.readString('command');
   pty:=cmd.readString('pty');
-  debug:= cmd.readString('debug')='true';
   delay:=cmd.readInt ('delay');
 
   if cmd.existsProperty ('reverse') then
