@@ -1036,6 +1036,9 @@ function i2d_DSAPrivateKey_bio(bp: pBIO; dsa: pDSA): integer; cdecl;
 function d2i_RSAPrivateKey_bio(bp: pBIO; rsa: pRSA): pRSA; cdecl;
 function i2d_RSAPrivateKey_bio(bp: pBIO; rsa: pRSA): integer; cdecl;
 
+//
+function ASN1_INTEGER_set(a: PASN1_INTEGER; v: integer): integer; cdecl;
+
 // Internal to ASN.1 and ASN.1 to internal conversion functions
 function i2a_ASN1_INTEGER(bp: pBIO; a: pASN1_INTEGER): integer; cdecl;
 function a2i_ASN1_INTEGER(bp: pBIO; bs: pASN1_INTEGER; buf: PCharacter;
@@ -1181,6 +1184,7 @@ function X509_get_notBefore(a: pX509): pASN1_TIME;
 function X509_get_notAfter(a: pX509): pASN1_TIME;
 function X509_get1_email(x: pX509): pSTACK; cdecl;
 function X509_get_pubkey(a: pX509): pEVP_PKEY; cdecl;
+function X509_set_pubkey(x: PX509; pkey: pEVP_PKEY): integer; cdecl;
 function X509_check_private_key(x509: pX509; pkey: pEVP_PKEY): integer; cdecl;
 function X509_check_purpose(x: pX509; id: integer; ca: integer): integer; cdecl;
 function X509_issuer_and_serial_cmp(a: pX509; b: pX509): integer; cdecl;
@@ -1277,12 +1281,18 @@ function PEM_read_bio_X509_CRL(bp: pBIO; var x: pX509_CRL; cb: TPWCallbackFuncti
     u: pointer): pX509_CRL; cdecl;
 function PEM_write_bio_X509_CRL(bp: pBIO; x: pX509_CRL): integer; cdecl;
 
+
 function PEM_read_bio_PrivateKey(bp: pBIO; var x: pEVP_PKEY;
     cb: TPWCallbackFunction; u: pointer): pEVP_PKEY; cdecl;
 function PEM_write_bio_PrivateKey(bp: pBIO; x: pEVP_PKEY;
     const enc: pEVP_CIPHER; kstr: PCharacter; klen: Integer; cb: TPWCallbackFunction;
     u: pointer): integer; cdecl;
 function PEM_write_bio_PKCS7(bp: pBIO; x: pPKCS7): integer; cdecl;
+
+function PEM_write_PrivateKey(var fp: file; x: PEVP_PKEY; enc: PEVP_CIPHER; kstr: PAnsiChar;
+           klen: integer; cb: {pem_password_cb}pointer; u: Pointer): integer; cdecl;
+
+function PEM_write_X509(var fp: file; x: PX509): integer; cdecl;
 
 // PKCS#5 functions
 function PKCS5_PBKDF2_HMAC_SHA1(pass: PCharacter; passlen: integer;
@@ -1744,6 +1754,8 @@ function i2d_DSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}del
 function d2i_RSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function i2d_RSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
+function ASN1_INTEGER_set; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
 function i2a_ASN1_INTEGER; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function a2i_ASN1_INTEGER; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
@@ -1909,6 +1921,7 @@ function X509_get_notAfter(a: pX509): pASN1_TIME;
   end;
 
 function X509_get1_email; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function X509_set_pubkey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_get_pubkey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_check_private_key; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_check_purpose; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1994,10 +2007,12 @@ function PEM_read_bio_X509_REQ; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}del
 function PEM_write_bio_X509_REQ; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function PEM_read_bio_X509_CRL; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function PEM_write_bio_X509_CRL; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
-function PEM_read_bio_PrivateKey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function PEM_write_bio_PrivateKey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function PEM_read_bio_PrivateKey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function PEM_read_bio_PKCS7; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function PEM_write_bio_PKCS7; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function PEM_write_PrivateKey; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function PEM_write_X509; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
 function PKCS5_PBKDF2_HMAC_SHA1; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
