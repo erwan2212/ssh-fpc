@@ -73,7 +73,112 @@ begin
   ERR_free_strings;
 end;
 
-//openssl pkcs12 -inkey priv.pem -in cert.pem -export -out cert.pfx
+function Convert2PKCS12(filename,pwd:string):boolean;
+var
+  err_reason:integer;
+  bp:pBIO;
+  p12_cert:pPKCS12 = nil;
+  pkey:pEVP_PKEY; x509_cert:pX509;
+  additional_certs:pSTACK_OFX509 = nil;
+begin
+
+  bp := BIO_new_file(pchar('private.key'), 'r+');
+  log('PEM_read_bio_PrivateKey');
+  pkey:=PEM_read_bio_PrivateKey(bp,nil,nil,nil);
+  BIO_free(bp);
+
+  bp := BIO_new_file(pchar('cert.crt'), 'r+');
+  log('PEM_read_bio_X509');
+  x509_cert:=PEM_read_bio_X509(bp,nil,nil,nil);
+  BIO_free(bp);
+
+  log('PKCS12_new');
+  p12_cert := PKCS12_new();
+  if p12_cert=nil then exit;
+
+
+  log('PKCS12_create');
+  p12_cert := PKCS12_create(pchar(pwd), nil, pkey, x509_cert, nil, 0, 0, 0, 0, 0);
+  if p12_cert = nil then exit;
+
+  log('i2d_PKCS12_bio');
+  bp := BIO_new_file(pchar(filename), 'w+');
+  err_reason:=i2d_PKCS12_bio(bp, p12_cert);
+  BIO_free(bp);
+  log(inttostr(err_reason));
+
+  if x509_cert<>nil then X509_free(x509_cert); x509_cert := nil;
+  if pkey<>nil then EVP_PKEY_free(pkey); pkey := nil;
+  ERR_clear_error();
+  PKCS12_free(p12_cert);
+  result:=true;
+end;
+
+function Convert2PEM(filename,pwd:string):boolean;
+const
+  PKCS12_R_MAC_VERIFY_FAILURE =113;
+var
+    p12_cert:pPKCS12 = nil;
+     pkey:pEVP_PKEY;
+    x509_cert:pX509;
+    additional_certs:pSTACK_OFX509 = nil;
+    bp:pBIO;
+    err_reason:integer;
+begin
+result:=false;
+  bp := BIO_new_file(pchar(filename), 'r+');
+  log('d2i_PKCS12_bio');
+  //decode
+  p12_cert:=d2i_PKCS12_bio(bp, nil);
+  log('PKCS12_parse');
+  //this is the export password, not the private key password
+  err_reason:=PKCS12_parse(p12_cert, pchar(pwd), pkey, x509_cert, additional_certs);
+  //if err_reason<>0 then
+  log(inttostr(err_reason));
+  BIO_free(bp);
+  if err_reason =0 then exit;
+
+  if p12_cert = nil then exit;
+
+
+  //
+  bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
+  log('PEM_write_bio_X509');
+  PEM_write_bio_X509(bp,x509_cert);
+  BIO_free(bp);
+  bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
+  log('PEM_write_bio_PrivateKey');
+  //the private key will have no password
+  PEM_write_bio_PrivateKey(bp,pkey,nil{EVP_des_ede3_cbc()},nil,0,nil,nil);
+  BIO_free(bp);
+  //
+
+  if x509_cert<>nil then X509_free(x509_cert); x509_cert := nil;
+  if pkey<>nil then EVP_PKEY_free(pkey); pkey := nil;
+  ERR_clear_error();
+  PKCS12_free(p12_cert);
+  result:=true;
+end;
+
+{
+PEM Format
+Most CAs (Certificate Authority) provide certificates in PEM format in Base64 ASCII encoded files.
+The certificate file types can be .pem, .crt, .cer, or .key.
+The .pem file can include the server certificate, the intermediate certificate and the private key in a single file.
+The server certificate and intermediate certificate can also be in a separate .crt or .cer file.
+The private key can be in a .key file.
+
+PKCS#12 Format
+The PKCS#12 certificates are in binary form, contained in .pfx or .p12 files.
+The PKCS#12 can store the server certificate, the intermediate certificate and the private key in a single .pfx file with password protection.
+These certificates are mainly used on the Windows platform.
+}
+
+//openssl pkcs12 -inkey priv.key -in cert.crt -export -out cert.pfx
+//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nodes -> no encrypted private key
+//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -> encrypted private key
+//openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
+//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
 function mkcert:boolean;
 var
     pkey:PEVP_PKEY;
@@ -98,7 +203,6 @@ rsa := RSA_generate_key(
 );
 //assign key to our struct
 log('EVP_PKEY_assign_RSA');
-//EVP_PKEY_assign_RSA(pkey, rsa);
 EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
 //OpenSSL uses the X509 structure to represent an x509 certificate in memory
 log('X509_new');
@@ -107,7 +211,7 @@ x509 := X509_new();
 ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
 //
 X509_gmtime_adj(X509_get_notBefore(x509), 0);
-X509_gmtime_adj(X509_get_notAfter(x509), 31536000);
+X509_gmtime_adj(X509_get_notAfter(x509), 31536000); // daysValid * 24 * 3600
 //Now we need to set the public key for our certificate using the key we generated earlier
 log('X509_set_pubkey');
 X509_set_pubkey(x509, pkey);
@@ -126,41 +230,20 @@ X509_sign(x509, pkey, EVP_sha1());
 
 //write out to disk
 
-//hfile := CreateFile(pchar('priv.pem'), GENERIC_READ or generic_write , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, create_always , FILE_ATTRIBUTE_NORMAL, 0);
-//if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
-{
-AssignFile(f, 'priv.pem');
-ReWrite(f);
-log('PEM_write_PrivateKey');
-PEM_write_PrivateKey(
-    f,              //* write the key to the file we've opened */
-    pkey,               //* our key from earlier */
-    EVP_des_ede3_cbc(), //* default cipher for encrypting the key on disk */
-    nil,       //* passphrase required for decrypting the key on disk */
-    0,                 //* length of the passphrase string */
-    nil,               //* callback for requesting a password */
-    nil                //* data to pass to the callback */
-);
-//closehandle(hfile);
-
-hfile := CreateFile(pchar('cert.pem'), GENERIC_READ or generic_write , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, create_always , FILE_ATTRIBUTE_NORMAL, 0);
-if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
-log('PEM_write_X509');
-PEM_write_X509(
-    hfile,   //* write the certificate to the file we've opened */
-    x509    //* our certificate */
-);
-}
-bp := BIO_new_file(pchar(GetCurrentDir+'\priv.pem'), 'w+');
+bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
 //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
 //if you want a prompt for passphrase
 PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
-bp := BIO_new_file(pchar(GetCurrentDir+'\cert.pem'), 'w+');
+
+bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
 PEM_write_bio_X509(bp,x509);
 //
 //bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
 //PEM_write_bio_X509(bp,x509);
 //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+//
+EVP_PKEY_free(pkey);
+X509_free(x509);
 //
 result:=true;
 end;
@@ -358,6 +441,7 @@ begin
 
 	// 3. save private key
 	bp_private := BIO_new_file(pchar(GetCurrentDir+'\private.pem'), 'w+');
+        //the private key will have no password
 	ret := PEM_write_bio_RSAPrivateKey(bp_private, r, nil, nil, 0, nil, nil);
         log('3. save private key');
 
@@ -1228,6 +1312,8 @@ begin
   cmd.declareflag('scp', 'scp');
   cmd.declareflag('genkey', 'generate rsa keys public.pem and private.pem');
   cmd.declareflag('mkcert', 'make a self sign root cert');
+  cmd.declareflag('p12topem', 'convert a pfx to pem');
+  cmd.declareflag('pemtop12', 'convert a pem to pfx');
   cmd.declareString('destip', 'forward mode (local or reverse)');
   cmd.declareint('destport', 'forward mode (local or reverse');
   //
@@ -1242,6 +1328,28 @@ begin
     try
     LoadSSL;
     if generate_key=true then writeln('ok') else writeln('not ok');
+    finally
+    FreeSSL;
+    end;
+    exit;
+    end;
+
+  if cmd.existsProperty('p12topem')=true then
+    begin
+    try
+    LoadSSL;
+    if Convert2PEM (cmd.readString('local_filename'),cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
+    finally
+    FreeSSL;
+    end;
+    exit;
+    end;
+
+  if cmd.existsProperty('pemtop12')=true then
+    begin
+    try
+    LoadSSL;
+    if Convert2PKCS12 (cmd.readString('local_filename'),cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;

@@ -1036,6 +1036,10 @@ function i2d_DSAPrivateKey_bio(bp: pBIO; dsa: pDSA): integer; cdecl;
 function d2i_RSAPrivateKey_bio(bp: pBIO; rsa: pRSA): pRSA; cdecl;
 function i2d_RSAPrivateKey_bio(bp: pBIO; rsa: pRSA): integer; cdecl;
 
+function PKCS12_create(pass:pchar;name:pchar; pkey:pEVP_PKEY; cert:pX509;
+    ca:pSTACK_OFX509;nid_key:integer; nid_cert:integer;
+    iter:integer;mac_iter:integer;keytype:integer):pPKCS12;cdecl;
+
 //
 function ASN1_INTEGER_set(a: PASN1_INTEGER; v: integer): integer; cdecl;
 
@@ -1268,7 +1272,7 @@ function PEM_read_bio_PUBKEY(bp: pBIO; var x: pEVP_PKEY;
     cb: TPWCallbackFunction; u: pointer): pEVP_PKEY; cdecl;
 function PEM_write_bio_PUBKEY(bp: pBIO; x: pEVP_PKEY): integer; cdecl;
 
-function PEM_read_bio_X509(bp: pBIO; var x: pX509; cb: TPWCallbackFunction;
+function PEM_read_bio_X509(bp: pBIO; {var} x: pX509; cb: TPWCallbackFunction;
     u: pointer): pX509; cdecl;
 function PEM_write_bio_X509(bp: pBIO; x: pX509): integer; cdecl;
 function PEM_read_bio_X509_AUX(bp: pBIO; var x: pX509; cb: TPWCallbackFunction;
@@ -1282,7 +1286,7 @@ function PEM_read_bio_X509_CRL(bp: pBIO; var x: pX509_CRL; cb: TPWCallbackFuncti
 function PEM_write_bio_X509_CRL(bp: pBIO; x: pX509_CRL): integer; cdecl;
 
 
-function PEM_read_bio_PrivateKey(bp: pBIO; var x: pEVP_PKEY;
+function PEM_read_bio_PrivateKey(bp: pBIO; {var} x: pEVP_PKEY;
     cb: TPWCallbackFunction; u: pointer): pEVP_PKEY; cdecl;
 function PEM_write_bio_PrivateKey(bp: pBIO; x: pEVP_PKEY;
     const enc: pEVP_CIPHER; kstr: PCharacter; klen: Integer; cb: TPWCallbackFunction;
@@ -1753,6 +1757,8 @@ function d2i_DSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}del
 function i2d_DSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function d2i_RSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function i2d_RSAPrivateKey_bio; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+function PKCS12_create; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
 function ASN1_INTEGER_set; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
