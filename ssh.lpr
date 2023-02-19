@@ -690,7 +690,19 @@ log('libssh2_init...');
     log('Assuming known host...');
 end;
 
-procedure scp;
+{
+const int _O_RDONLY = 0x0000;  /* open for reading only */
+const int _O_WRONLY = 0x0001;  /* open for writing only */
+const int _O_RDWR   = 0x0002;  /* open for reading and writing */
+const int _O_APPEND = 0x0008;  /* writes done at eof */
+
+const int _O_CREAT  = 0x0100;  /* create and open file */
+const int _O_TRUNC  = 0x0200;  /* open and truncate */
+const int _O_EXCL   = 0x0400;  /* open only if file doesn't already exist */
+
+}
+
+procedure scp(local,remote:string);
 var
 sock:tsocket;
 session:PLIBSSH2_SESSION=nil;
@@ -700,8 +712,9 @@ hfile:thandle=thandle(-1);
 fsize:int64=0;
 size:dword=0;
 i:integer;
-mem:array [0..1023] of char;
+mem:array [0..4096-1] of char;
 errmsg:pchar;
+mode:integer;
 begin
 
 //
@@ -714,7 +727,8 @@ try
      exit;
      end;
   end;
-
+  //mode:=1;
+  //ioctlsocket (sock, FIONBIO, @mode);
   //
   session:=init_session(sock);
   if session=nil then
@@ -742,19 +756,21 @@ try
 
 
   //
-  log('local_filename:'+filename);
-  hfile := CreateFile(pchar(filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
+  log('local_filename:'+local);
+  hfile := CreateFile(pchar(local), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
   if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
   Int64Rec(fsize).Lo := GetFileSize(hfile, @Int64Rec(fsize).Hi);
   log('size:'+inttostr(fsize));
   //* Send a file via scp. The mode parameter must only have permissions! */
-  log('remote_filename:'+remote_filename);
-  channel := libssh2_scp_send(session, pansichar(remote_filename), integer(0777),size_t(fsize));
+  log('remote_filename:'+remote);
+  //channel := libssh2_scp_send(session, pansichar(remote_filename), integer(0777),size_t(fsize));
+  //libssh2_session_set_blocking(session, 1);
+  channel :=libssh2_scp_send64(session,pansichar(remote), $102,size_t(fsize),0,0);
 
   if not assigned(channel) then
     begin
     libssh2_session_last_error(session, errmsg, i, 0);
-    log(strpas(errmsg));
+    log('error:'+strpas(errmsg));
     log('Cannot open channel',1);
     exit;
     end;
@@ -1019,7 +1035,7 @@ begin
 
   if cmd.existsProperty ('scp') then
     begin
-    scp;
+    scp(filename,remote_filename);
     exit;
     end;
 
