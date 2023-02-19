@@ -16,12 +16,9 @@ uses
   libssh2,
   winsock2,
   libeay32,
-  rcmdline in '..\rcmdline-master\rcmdline.pas';
+  rcmdline in '..\rcmdline-master\rcmdline.pas', opensslutils, utils;
 
-type
-ReadKeyChar = AnsiChar;
-//ReadKeyChar = Byte;
-PReadKeyChar = ^ReadKeyChar;
+
 
 type
 
@@ -41,420 +38,19 @@ type
 
 
 var
-  debug:boolean=false;
+
   bNewString:boolean;
-  ssend:string;
+  ssend,encrypted:string;
   delay:integer;
   //
-  host,username,password,command,pty,privatekey,publickey,local_filename,remote_filename:string;
+  host,username,password,command,pty,privatekey,publickey,filename,remote_filename:string;
   port:integer=22;
   //
+  hfile_:thandle=thandle(-1);
+  mem_:array[0..8192-1] of char;
+  size_:dword=0;
+  //
   cmd: TCommandLineReader;
-
-procedure log(msg:string;level:byte=0);
-begin
-if (level=0) and (debug=false) then exit;
-writeln(msg);
-end;
-
-procedure LoadSSL;
-begin
-  OpenSSL_add_all_algorithms;
-  OpenSSL_add_all_ciphers;
-  OpenSSL_add_all_digests;
-  ERR_load_crypto_strings;
-  ERR_load_RSA_strings;
-end;
-
-
-procedure FreeSSL;
-begin
-  EVP_cleanup;
-  ERR_free_strings;
-end;
-
-function Convert2PKCS12(filename,pwd:string):boolean;
-var
-  err_reason:integer;
-  bp:pBIO;
-  p12_cert:pPKCS12 = nil;
-  pkey:pEVP_PKEY; x509_cert:pX509;
-  additional_certs:pSTACK_OFX509 = nil;
-begin
-
-  bp := BIO_new_file(pchar('private.key'), 'r+');
-  log('PEM_read_bio_PrivateKey');
-  pkey:=PEM_read_bio_PrivateKey(bp,nil,nil,nil);
-  BIO_free(bp);
-
-  bp := BIO_new_file(pchar('cert.crt'), 'r+');
-  log('PEM_read_bio_X509');
-  x509_cert:=PEM_read_bio_X509(bp,nil,nil,nil);
-  BIO_free(bp);
-
-  log('PKCS12_new');
-  p12_cert := PKCS12_new();
-  if p12_cert=nil then exit;
-
-
-  log('PKCS12_create');
-  p12_cert := PKCS12_create(pchar(pwd), nil, pkey, x509_cert, nil, 0, 0, 0, 0, 0);
-  if p12_cert = nil then exit;
-
-  log('i2d_PKCS12_bio');
-  bp := BIO_new_file(pchar(filename), 'w+');
-  err_reason:=i2d_PKCS12_bio(bp, p12_cert);
-  BIO_free(bp);
-  log(inttostr(err_reason));
-
-  if x509_cert<>nil then X509_free(x509_cert); x509_cert := nil;
-  if pkey<>nil then EVP_PKEY_free(pkey); pkey := nil;
-  ERR_clear_error();
-  PKCS12_free(p12_cert);
-  result:=true;
-end;
-
-function Convert2PEM(filename,pwd:string):boolean;
-const
-  PKCS12_R_MAC_VERIFY_FAILURE =113;
-var
-    p12_cert:pPKCS12 = nil;
-     pkey:pEVP_PKEY;
-    x509_cert:pX509;
-    additional_certs:pSTACK_OFX509 = nil;
-    bp:pBIO;
-    err_reason:integer;
-begin
-result:=false;
-  bp := BIO_new_file(pchar(filename), 'r+');
-  log('d2i_PKCS12_bio');
-  //decode
-  p12_cert:=d2i_PKCS12_bio(bp, nil);
-  log('PKCS12_parse');
-  //this is the export password, not the private key password
-  err_reason:=PKCS12_parse(p12_cert, pchar(pwd), pkey, x509_cert, additional_certs);
-  //if err_reason<>0 then
-  log(inttostr(err_reason));
-  BIO_free(bp);
-  if err_reason =0 then exit;
-
-  if p12_cert = nil then exit;
-
-
-  //
-  bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
-  log('PEM_write_bio_X509');
-  PEM_write_bio_X509(bp,x509_cert);
-  BIO_free(bp);
-  bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
-  log('PEM_write_bio_PrivateKey');
-  //the private key will have no password
-  PEM_write_bio_PrivateKey(bp,pkey,nil{EVP_des_ede3_cbc()},nil,0,nil,nil);
-  BIO_free(bp);
-  //
-
-  if x509_cert<>nil then X509_free(x509_cert); x509_cert := nil;
-  if pkey<>nil then EVP_PKEY_free(pkey); pkey := nil;
-  ERR_clear_error();
-  PKCS12_free(p12_cert);
-  result:=true;
-end;
-
-{
-PEM Format
-Most CAs (Certificate Authority) provide certificates in PEM format in Base64 ASCII encoded files.
-The certificate file types can be .pem, .crt, .cer, or .key.
-The .pem file can include the server certificate, the intermediate certificate and the private key in a single file.
-The server certificate and intermediate certificate can also be in a separate .crt or .cer file.
-The private key can be in a .key file.
-
-PKCS#12 Format
-The PKCS#12 certificates are in binary form, contained in .pfx or .p12 files.
-The PKCS#12 can store the server certificate, the intermediate certificate and the private key in a single .pfx file with password protection.
-These certificates are mainly used on the Windows platform.
-}
-
-//openssl pkcs12 -inkey priv.key -in cert.crt -export -out cert.pfx
-//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nodes -> no encrypted private key
-//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -> encrypted private key
-//openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
-//openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
-function mkcert:boolean;
-var
-    pkey:PEVP_PKEY;
-    rsa:pRSA;
-    x509:pX509;
-    name:pX509_NAME;
-    hfile:thandle=thandle(-1);
-    f:file;
-    bp:pBIO;
-begin
-result:=false;
-  //OpenSSL provides the EVP_PKEY structure for storing an algorithm-independent private key in memory
-  log('EVP_PKEY_new');
-  pkey := EVP_PKEY_new();
-  //generate key
-  log('RSA_generate_key');
-rsa := RSA_generate_key(
-    2048,   //* number of bits for the key - 2048 is a sensible value */
-    RSA_F4, //* exponent - RSA_F4 is defined as 0x10001L */
-    nil,   //* callback - can be NULL if we aren't displaying progress */
-    nil    //* callback argument - not needed in this case */
-);
-//assign key to our struct
-log('EVP_PKEY_assign_RSA');
-EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
-//OpenSSL uses the X509 structure to represent an x509 certificate in memory
-log('X509_new');
-x509 := X509_new();
-//Now we need to set a few properties of the certificate
-ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
-//
-X509_gmtime_adj(X509_get_notBefore(x509), 0);
-X509_gmtime_adj(X509_get_notAfter(x509), 31536000); // daysValid * 24 * 3600
-//Now we need to set the public key for our certificate using the key we generated earlier
-log('X509_set_pubkey');
-X509_set_pubkey(x509, pkey);
-//Since this is a self-signed certificate, we set the name of the issuer to the name of the subject
-log('X509_get_subject_name');
-name := X509_get_subject_name(x509);
-X509_NAME_add_entry_by_txt(name, 'C',  MBSTRING_ASC,pchar('FR'), -1, -1, 0);
-X509_NAME_add_entry_by_txt(name, 'O',  MBSTRING_ASC,pchar('MyCompany Inc.'), -1, -1, 0);
-X509_NAME_add_entry_by_txt(name, 'CN', MBSTRING_ASC,pchar('localhost'), -1, -1, 0);
-//Now we can actually set the issuer name:
-log('X509_set_issuer_name');
-X509_set_issuer_name(x509, name);
-//And finally we are ready to perform the signing process. We call X509_sign with the key we generated earlier. The code for this is painfully simple:
-log('X509_sign');
-X509_sign(x509, pkey, EVP_sha1());
-
-//write out to disk
-
-bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
-//PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
-//if you want a prompt for passphrase
-PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
-
-bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
-PEM_write_bio_X509(bp,x509);
-//
-//bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
-//PEM_write_bio_X509(bp,x509);
-//PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
-//
-EVP_PKEY_free(pkey);
-X509_free(x509);
-//
-result:=true;
-end;
-
-function LoadPEMFile(filePath: string): PBio;
-var
-{$IFNDEF MSWINDOWS}
-  LEncoding: TEncoding;
-  LOffset: Integer;
-{$ENDIF}
-  Buffer: TBytes;
-  Stream: TStream;
-begin
-  Stream := TFileStream.Create(filePath, fmOpenRead or fmShareDenyWrite);
-  try
-    SetLength(Buffer, Stream.size);
-    Stream.ReadBuffer(Buffer[0], Stream.size);
-{$IFNDEF MSWINDOWS}
-{On traite les problèmes d'encodage de flux sur les plateformes différentes de Windows}
-    LEncoding := nil;
-    LOffset := TEncoding.GetBufferEncoding(Buffer, LEncoding);
-    Buffer := LEncoding.Convert(LEncoding, TEncoding.UTF8, Buffer, LOffset,
-      Length(Buffer) - LOffset);
-{$ENDIF}
-    Result := BIO_new_mem_buf(@Buffer[0], Length(Buffer));
-  finally
-    Stream.free;
-  end;
-end;
-
-{
-Importer une clé publique RSA
-Un fichier au format PEM contenant une clé publique RSA
-commence par —–BEGIN PUBLIC KEY—–
-puis est suivi de la clé en Base64
-et se termine par —–END PUBLIC KEY—–.
-}
-function FromOpenSSLPublicKey(filePath: string): pRSA;
-var
-  KeyBuffer: PBIO;
-  pkey: PEVP_PKEY;
-  x: pEVP_PKEY;
-begin
-  x:=nil;
-  KeyBuffer := LoadPEMFile(filePath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer');
-  try
-    pkey := PEM_read_bio_PUBKEY(KeyBuffer, x, nil, nil);
-    if not Assigned(pkey) then
-      raise Exception.Create('Impossible de charger la clé publique');
-    try
-      Result := EVP_PKEY_get1_RSA(pkey);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé publique RSA');
-    finally
-      EVP_PKEY_free(pkey);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
-end;
-{
-Importer une clé privée RSA (chiffrée ou non)
-Un fichier au format PEM contenant un clé privée RSA
-commence par —–BEGIN PRIVATE KEY—– puis est suivi de la clé en Base64
-et se termine par —–END PRIVATE KEY—–.
-Si la clé est chiffrée, alors le fichier au format PEM
-commence par —–BEGIN RSA PRIVATE KEY—– puis est suivi de Proc-Type: 4,ENCRYPTED.
-Ensuite, il y a des informations sur l’algorithme utilisé pour chiffrer la clé (par exemple AES-128-CBC)
-puis il y a la clé chiffrée, en Base64.
-Enfin, le fichier se termine par —–END RSA PRIVATE KEY—–.
-}
-function FromOpenSSLPrivateKey(filePath: string; pwd: String): pRSA;
-var
-  KeyBuffer: PBio;
-  p: PReadKeyChar;
-  I: Integer;
-  x: pRSA;
-begin
-  x:=nil;
-  KeyBuffer := LoadPEMFile(filePath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer');
-  try
-    if pwd <> '' then
-    begin
-      p := GetMemory((length(pwd) + 1) * SizeOf(Char));
-      for I := 0 to length(pwd) - 1 do p[I] := ReadKeyChar(pwd[I+1]);
-      p[length(pwd)] := ReadKeyChar(#0);
-    end
-    else
-      p := nil;
-    try
-      Result := PEM_read_bio_RSAPrivateKey(KeyBuffer, x, nil, p);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé privée RSA');
-    finally
-{On efface le mot de passe}
-      FillChar(p, SizeOf(p), 0);
-      FreeMem(p);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
-
-end;
-
-{
-Importer une clé publique RSA à partir d’un certificat X509
-Un fichier au format PEM contenant un certificat X509
-commence par —–BEGIN CERTIFICATE—– puis est suivi de la clé en Base64
-et se termine par —–END CERTIFICATE—–.
-}
-function FromOpenSSLCert(filePath: string): pRSA;
-var
-  KeyBuffer: PBIO;
-  FX509: pX509;
-  Key: PEVP_PKEY;
-  x: pX509;
-begin
-  x:=nil;
-  //KeyBuffer := LoadPEMFile(Buffer, Length(Buffer));
-  KeyBuffer := LoadPEMFile(filepath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer X509');
-  try
-    FX509 := PEM_read_bio_X509(KeyBuffer, x, nil, nil);
-    if not Assigned(FX509) then
-      raise Exception.Create('Impossible de charger le certificat X509');
-    Key := X509_get_pubkey(FX509);
-    if not Assigned(Key) then
-      raise Exception.Create('Impossible de charger la clé publique X509');
-    try
-      Result := EVP_PKEY_get1_RSA(Key);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé publique RSA');
-    finally
-      EVP_PKEY_free(Key);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
-end;
-
-//on the remote ssh server, generate the pub key from the private key generated on the client
-//ssh-keygen -y -f private.pem > key.pub
-//copy the pub key to the authorized keys
-//cat key.pub >> ~/.ssh/authorized_keys
-//should work as well : ssh-copy-id -i /path/to/key/file user@host.com
-//Remember that .ssh folder has to be 700. The authorized_keys file should be 600
-//or the other way (no success here for now)
-//on the remote ssh server, generate a key pair
-//ssh-keygen -b 2048 -t rsa -m PEM
-//and use either the pub or priv key from there
-//see also https://docs.oracle.com/en/cloud/cloud-at-customer/occ-get-started/generate-ssh-key-pair.html
-function generate_key:boolean;
-var
-
-	ret:integer; //= 0;
-	r:pRSA;//				 = nil;
-	bne:pBIGNUM;// = nil;
-	bp_public:pBIO;// = nil;
-  bp_private:pBIO;// = nil;
-
-	bits:integer; // = 2048;
-	e:ulong; // = RSA_F4;
-  label free_all;
-begin
-  //
-  ret:=0;
-  r:=nil;
-  bne:=nil;
-  bp_public :=nil;
-  bp_private :=nil;
-  bits:=2048;
-  e :=RSA_F4;
-	// 1. generate rsa key
-	bne := BN_new();
-	ret := BN_set_word(bne,e);
-	if ret <> 1 then goto free_all;
-
-	r := RSA_new();
-	ret := RSA_generate_key_ex(r, bits, bne, nil);
-	if ret <> 1 then goto free_all;
-        log('1. generate rsa key OK');
-
-
-
-	// 2. save public key
-	bp_public := BIO_new_file(pchar(GetCurrentDir+'\public.pem'), 'w+');
-	ret := PEM_write_bio_RSAPublicKey(bp_public, r);
-	if ret <>1 then goto free_all;
-        log('2. save public key OK');
-
-	// 3. save private key
-	bp_private := BIO_new_file(pchar(GetCurrentDir+'\private.pem'), 'w+');
-        //the private key will have no password
-	ret := PEM_write_bio_RSAPrivateKey(bp_private, r, nil, nil, 0, nil, nil);
-        log('3. save private key');
-
-	// 4. free
-free_all:
-
-	BIO_free_all(bp_public);
-	BIO_free_all(bp_private);
-	RSA_free(r);
-	BN_free(bne);
-
-	if ret=1 then result:=true else result:=false;
-end;
 
 
 { TReadThread }
@@ -1146,8 +742,8 @@ try
 
 
   //
-  log('local_filename:'+local_filename);
-  hfile := CreateFile(pchar(local_filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
+  log('local_filename:'+filename);
+  hfile := CreateFile(pchar(filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
   if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
   Int64Rec(fsize).Lo := GetFileSize(hfile, @Int64Rec(fsize).Hi);
   log('size:'+inttostr(fsize));
@@ -1292,7 +888,7 @@ begin
 end;
 
 begin
-
+  debug:=true;
 
 
 
@@ -1307,27 +903,59 @@ begin
   cmd.declareString('pty', 'true|false, default=true is no command provided');
   cmd.declareString('debug', 'true|false','false');
   cmd.declareInt ('delay', 'delay between 2 read/write in command+pty mode',1000);
+  //
   cmd.declareflag('reverse', 'reverse forwarding');
   cmd.declareflag('local', 'local forwarding');
-  cmd.declareflag('scp', 'scp');
-  cmd.declareflag('genkey', 'generate rsa keys public.pem and private.pem');
-  cmd.declareflag('mkcert', 'make a self sign root cert');
-  cmd.declareflag('p12topem', 'convert a pfx to pem');
-  cmd.declareflag('pemtop12', 'convert a pem to pfx');
   cmd.declareString('destip', 'forward mode (local or reverse)');
   cmd.declareint('destport', 'forward mode (local or reverse');
   //
-  cmd.declareString('local_filename', 'local filename');
+  cmd.declareflag('scp', 'scp');
+  cmd.declareString('filename', 'local filename');
   cmd.declareString('remote_filename', 'remote filename');
+  //
+  cmd.declareflag('genkey', 'generate rsa keys public.pem and private.pem');
+  cmd.declareflag('encrypt', 'encrypt a file using public.pem');
+  cmd.declareflag('decrypt', 'decrypt a file using private.pem');
+  cmd.declareflag('mkcert', 'make a self sign root cert, write to cert.crt and private.key');
+  cmd.declareflag('p12topem', 'convert a pfx to pem, write to cert.crt and private.key');
+  cmd.declareflag('pemtop12', 'convert a pem to pfx, read from cert.crt and private.key');
+  //
   cmd.parse(cmdline);
 
   debug:= cmd.readString('debug')='true';
+
+  if cmd.existsProperty('encrypt')=true then
+  begin
+    LoadSSL;
+    filename:=cmd.readString('filename');
+    hfile_ := CreateFile(pchar(filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
+    if hfile_=thandle(-1) then begin log('invalid handle',1);exit;end;
+    ReadFile (hfile_,mem_[0],sizeof(mem_),size_,nil);
+    if size_>0 then EncryptPub (strpas(@mem_[0]),encrypted);
+    writeln(encrypted);
+    closehandle(hfile_);
+    freessl;
+    exit;
+  end;
+
+  if cmd.existsProperty('decrypt')=true then
+  begin
+    LoadSSL;
+    filename:=cmd.readString('filename');
+    hfile_ := CreateFile(pchar(filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
+    if hfile_=thandle(-1) then begin log('invalid handle',1);exit;end;
+    ReadFile (hfile_,mem_[0],sizeof(mem_),size_,nil);
+    if size_>0 then DecryptPriv(strpas(@mem_[0]));
+    closehandle(hfile_);
+    freessl;
+    exit;
+  end;
 
   if cmd.existsProperty('genkey')=true then
     begin
     try
     LoadSSL;
-    if generate_key=true then writeln('ok') else writeln('not ok');
+    if generate_rsa_key=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -1338,7 +966,9 @@ begin
     begin
     try
     LoadSSL;
-    if Convert2PEM (cmd.readString('local_filename'),cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
+    filename:=cmd.readString('filename');
+    if filename='' then filename:='cert.pfx';
+    if Convert2PEM (filename,cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -1349,7 +979,9 @@ begin
     begin
     try
     LoadSSL;
-    if Convert2PKCS12 (cmd.readString('local_filename'),cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
+    filename:=cmd.readString('filename');
+    if filename='' then filename:='cert.pfx';
+    if Convert2PKCS12 (filename,cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -1380,7 +1012,7 @@ begin
   privatekey:=cmd.readString('privatekey');
   publickey:=cmd.readString('publickey');
   command:=cmd.readString('command');
-  local_filename:=cmd.readString('local_filename');
+  filename:=cmd.readString('filename');
   remote_filename:=cmd.readString('remote_filename');
   pty:=cmd.readString('pty');
   delay:=cmd.readInt ('delay');

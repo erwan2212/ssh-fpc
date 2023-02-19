@@ -1253,12 +1253,12 @@ function X509_LOOKUP_ctrl(ctx: pX509_LOOKUP; cmd: integer; const argc: PCharacte
 function X509_LOOKUP_file: pX509_LOOKUP_METHOD; cdecl;
 
 // PEM functions
-function PEM_read_bio_RSAPrivateKey(bp: pBIO; var x: pRSA;
+function PEM_read_bio_RSAPrivateKey(bp: pBIO; {var} x: pRSA;
     cb: TPWCallbackFunction; u: pointer): pRSA; cdecl;
 function PEM_write_bio_RSAPrivateKey(bp: pBIO; x: pRSA; const enc: pEVP_CIPHER;
     kstr: PCharacter; klen: integer; cb: TPWCallbackFunction;
     u: pointer): integer; cdecl;
-function PEM_read_bio_RSAPublicKey(bp: pBIO; var x: pRSA;
+function PEM_read_bio_RSAPublicKey(bp: pBIO; {var} x: pRSA;
     cb: TPWCallbackFunction; u: pointer): pRSA; cdecl;
 function PEM_write_bio_RSAPublicKey(bp: pBIO; x: pRSA): integer; cdecl;
 
@@ -1268,7 +1268,7 @@ function PEM_write_bio_DSAPrivateKey(bp: pBIO; dsa: pDSA; const enc: pEVP_CIPHER
     kstr: PCharacter; klen: integer; cb: TPWCallbackFunction;
     data: pointer): integer; cdecl;
 
-function PEM_read_bio_PUBKEY(bp: pBIO; var x: pEVP_PKEY;
+function PEM_read_bio_PUBKEY(bp: pBIO; {var} x: pEVP_PKEY;
     cb: TPWCallbackFunction; u: pointer): pEVP_PKEY; cdecl;
 function PEM_write_bio_PUBKEY(bp: pBIO; x: pEVP_PKEY): integer; cdecl;
 

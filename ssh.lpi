@@ -27,7 +27,7 @@
         <CommandLineParams Value="192.168.1.188 delphine chipie uptime"/>
       </local>
     </RunParams>
-    <Units Count="2">
+    <Units Count="4">
       <Unit0>
         <Filename Value="ssh.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -36,6 +36,15 @@
         <Filename Value="..\rcmdline-master\rcmdline.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit1>
+      <Unit2>
+        <Filename Value="opensslutils.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="OpenSSLUtils"/>
+      </Unit2>
+      <Unit3>
+        <Filename Value="utils.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit3>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
