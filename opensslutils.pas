@@ -12,6 +12,7 @@ procedure LoadSSL;
 procedure FreeSSL;
 function generate_rsa_key:boolean;
 function mkcert:boolean;
+function mkreq(cn:string;keyfile,csrfile:string):boolean;
 function Convert2PEM(filename,export_pwd:string):boolean;
 function Convert2PKCS12(filename,export_pwd:string):boolean;
 
@@ -180,7 +181,7 @@ x509 := X509_new();
 ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
 //
 X509_gmtime_adj(X509_get_notBefore(x509), 0);
-X509_gmtime_adj(X509_get_notAfter(x509), 31536000); // daysValid * 24 * 3600
+X509_gmtime_adj(X509_get_notAfter(x509), 31536000); // 365 * 24 * 3600
 //Now we need to set the public key for our certificate using the key we generated earlier
 log('X509_set_pubkey');
 X509_set_pubkey(x509, pkey);
@@ -215,6 +216,68 @@ EVP_PKEY_free(pkey);
 X509_free(x509);
 //
 result:=true;
+end;
+
+//to sign a csr
+//openssl x509 -req -in device.csr -CA rootCA.pem -CAkey rootCA.key -CAcreateserial -out device.crt -days 500 -sha256
+function mkreq(cn:string;keyfile,csrfile:string):boolean;
+var
+ret:integer;
+rsa:pRSA;
+bp:pBIO;
+req:pX509_REQ;
+key:pEVP_PKEY;
+name:pX509_NAME;
+begin
+result:=false;
+
+
+        log('RSA_generate_key');
+	rsa := RSA_generate_key(
+    2048,   //* number of bits for the key - 2048 is a sensible value */
+    RSA_F4, //* exponent - RSA_F4 is defined as 0x10001L */
+    nil,   //* callback - can be NULL if we aren't displaying progress */
+    nil    //* callback argument - not needed in this case */
+);
+
+        bp := BIO_new_file(pchar(GetCurrentDir+'\'+keyfile), 'w+');
+        //the private key will have no password
+        log('PEM_write_bio_RSAPrivateKey');
+        ret := PEM_write_bio_RSAPrivateKey(bp, rsa, nil, nil, 0, nil, nil);
+	BIO_free(bp);
+
+        log('X509_REQ_new');
+	req := X509_REQ_new();
+
+	if req=nil then exit;
+
+        log('EVP_PKEY_new');
+	key := EVP_PKEY_new();
+	EVP_PKEY_assign(key,EVP_PKEY_RSA,PCharacter(rsa));
+	X509_REQ_set_version(req, 0);
+	X509_REQ_set_pubkey(req, key);
+
+        log('X509_REQ_get_subject_name');
+	name := X509_NAME_new; //X509_REQ_get_subject_name(req);
+        log('X509_NAME_add_entry_by_txt');
+	X509_NAME_add_entry_by_txt(name, 'CN', MBSTRING_ASC,pchar(cn), -1, -1, 0);
+        log('X509_REQ_set_subject_name');
+        ret:=X509_REQ_set_subject_name(Req, name); //since X509_REQ_get_subject_name(req) failed on me
+
+        log('X509_REQ_sign');
+	X509_REQ_sign(req, key, EVP_sha1());
+
+	EVP_PKEY_free(key);
+
+        bp := BIO_new_file(pchar(GetCurrentDir+'\'+csrfile), 'w+');
+        log('PEM_write_bio_X509_REQ');
+        PEM_write_bio_X509_REQ(bp, req);
+	BIO_free(bp);
+
+	X509_REQ_free(req);
+
+result:=true;
+
 end;
 
 function LoadPublicKey(KeyFile: string) :pEVP_PKEY ;

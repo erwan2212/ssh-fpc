@@ -933,6 +933,7 @@ begin
   cmd.declareflag('encrypt', 'encrypt a file using public.pem');
   cmd.declareflag('decrypt', 'decrypt a file using private.pem');
   cmd.declareflag('mkcert', 'make a self sign root cert, write to cert.crt and private.key');
+  cmd.declareflag('mkreq', 'make a certificate service request, write to cert.csr reqest.key');
   cmd.declareflag('p12topem', 'convert a pfx to pem, write to cert.crt and private.key');
   cmd.declareflag('pemtop12', 'convert a pem to pfx, read from cert.crt and private.key');
   //
@@ -1009,6 +1010,17 @@ begin
     try
     LoadSSL;
     if mkcert=true then writeln('ok') else writeln('not ok');
+    finally
+    FreeSSL;
+    end;
+    exit;
+    end;
+
+  if cmd.existsProperty('mkreq')=true then
+    begin
+    try
+    LoadSSL;
+    if mkreq('localhost','request.key','cert.csr')=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
