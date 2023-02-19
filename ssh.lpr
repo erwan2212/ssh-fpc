@@ -702,7 +702,7 @@ const int _O_EXCL   = 0x0400;  /* open only if file doesn't already exist */
 
 }
 
-procedure scp(local,remote:string);
+function scp_write(local,remote:string):boolean;
 var
 sock:tsocket;
 session:PLIBSSH2_SESSION=nil;
@@ -716,14 +716,14 @@ mem:array [0..4096-1] of char;
 errmsg:pchar;
 mode:integer;
 begin
-
+result:=false;
 //
 try
   if init_socket(sock)=false then begin writeln('socket failed');exit;end; ;
   except
   on e:exception do
      begin
-     writeln(e.Message );
+     log(e.Message,1 );
      exit;
      end;
   end;
@@ -733,7 +733,7 @@ try
   session:=init_session(sock);
   if session=nil then
     begin
-    log('session is null');
+    log('session is null',1);
     exit;
     end;
 
@@ -805,7 +805,7 @@ libssh2_channel_free(channel);
     closesocket(sock);
     libssh2_exit();
 
-
+result:=true;
 end;
 
 procedure main;
@@ -925,7 +925,7 @@ begin
   cmd.declareString('destip', 'forward mode (local or reverse)');
   cmd.declareint('destport', 'forward mode (local or reverse');
   //
-  cmd.declareflag('scp', 'scp');
+  cmd.declareflag('put', 'secure copy a file to a remote ssh host');
   cmd.declareString('filename', 'local filename');
   cmd.declareString('remote_filename', 'remote filename');
   //
@@ -1033,9 +1033,12 @@ begin
   pty:=cmd.readString('pty');
   delay:=cmd.readInt ('delay');
 
-  if cmd.existsProperty ('scp') then
+  if cmd.existsProperty ('put') then
     begin
-    scp(filename,remote_filename);
+    if remote_filename='' then remote_filename :=filename;
+    if scp_write(filename,remote_filename)=true
+       then log('ok',1)
+       else log('not ok',1);
     exit;
     end;
 
