@@ -11,8 +11,10 @@ uses
 procedure LoadSSL;
 procedure FreeSSL;
 function generate_rsa_key:boolean;
-function mkcert:boolean;
+function mkCAcert(cn:string):boolean;
 function mkreq(cn:string;keyfile,csrfile:string):boolean;
+function signreq(filename:string):boolean;
+function selfsign(subject:string):boolean;
 function Convert2PEM(filename,export_pwd:string):boolean;
 function Convert2PKCS12(filename,export_pwd:string):boolean;
 
@@ -51,7 +53,7 @@ var
   additional_certs:pSTACK_OFX509 = nil;
 begin
 
-  bp := BIO_new_file(pchar('private.key'), 'r+');
+  bp := BIO_new_file(pchar('cert.key'), 'r+');
   log('PEM_read_bio_PrivateKey');
   //password will be prompted
   pkey:=PEM_read_bio_PrivateKey(bp,nil,nil,nil);
@@ -116,7 +118,7 @@ result:=false;
   log('PEM_write_bio_X509');
   PEM_write_bio_X509(bp,x509_cert);
   BIO_free(bp);
-  bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
+  bp := BIO_new_file(pchar(GetCurrentDir+'\cert.key'), 'w+');
   log('PEM_write_bio_PrivateKey');
   //the private key will have no password
   PEM_write_bio_PrivateKey(bp,pkey,nil{EVP_des_ede3_cbc()},nil,0,nil,nil);
@@ -128,6 +130,209 @@ result:=false;
   ERR_clear_error();
   PKCS12_free(p12_cert);
   result:=true;
+end;
+
+function selfsign(subject:string):boolean;
+var
+    x:pX509 = nil;
+    tmp:pX509_NAME=nil;
+    pkey:pEVP_PKEY = nil;
+    rsa:pRSA=nil;
+    bp:pBIO=nil;
+begin
+  result:=false;
+
+  x := X509_new();
+
+  //OpenSSL provides the EVP_PKEY structure for storing an algorithm-independent private key in memory
+  log('EVP_PKEY_new');
+  pkey := EVP_PKEY_new();
+
+  //generate key
+  log('RSA_generate_key');
+  rsa := RSA_generate_key(
+    2048,   //* number of bits for the key - 2048 is a sensible value */
+    RSA_F4, //* exponent - RSA_F4 is defined as 0x10001L */
+    nil,   //* callback - can be NULL if we aren't displaying progress */
+    nil    //* callback argument - not needed in this case */
+    );
+
+   //assign key to our struct
+   log('EVP_PKEY_assign_RSA');
+   EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
+
+   X509_set_version(x, 2); //* version 3 certificate */
+   ASN1_INTEGER_set(X509_get_serialNumber(x),0);
+   X509_gmtime_adj(X509_get_notBefore(x), 0);
+   X509_gmtime_adj(X509_get_notAfter(x), 365 * 24 * 3600);
+
+   tmp := X509_get_subject_name(x);
+   X509_NAME_add_entry_by_txt(tmp, 'CN', MBSTRING_ASC, pchar(subject), -1, -1, 0);
+   X509_set_subject_name(x, tmp);
+
+   X509_set_pubkey(x, pkey);
+   X509_sign(x, pkey, EVP_sha1());
+
+   bp := BIO_new_file(pchar('cert.key'), 'w+');
+  //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
+  //if you want a prompt for passphrase
+  log('PEM_write_bio_PrivateKey');
+  PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+  BIO_free(bp);
+
+  bp := BIO_new_file(pchar('cert.crt'), 'w+');
+  log('PEM_write_bio_X509');
+  PEM_write_bio_X509(bp,x);
+  BIO_free(bp);
+
+   result:=x<>nil;
+
+   if (x<>nil) then X509_free(x);
+   if (pkey<>nil) then EVP_PKEY_free(pkey);
+
+end;
+
+function add_ext(cert: PX509; nid: TC_INT; value: PAnsiChar): Boolean;
+var ex: PX509_EXTENSION;
+    ctx: X509V3_CTX;
+begin
+  Result := false;
+  ctx.db := nil;
+  X509V3_set_ctx(@ctx, cert, cert, nil, nil, 0);
+  ex := X509V3_EXT_conf_nid(nil, @ctx, nid, value);
+  if ex <> nil then
+  begin
+    X509_add_ext(cert, ex, -1);
+    X509_EXTENSION_free(ex);
+    Result := True;
+  end;
+
+end;
+
+// sign cert
+function do_X509_sign(cert:pX509; pkey:pEVP_PKEY;const md:pEVP_MD):integer;
+var
+rv:integer;
+mctx:EVP_MD_CTX;
+pkctx:pEVP_PKEY_CTX = nil;
+begin
+        log('EVP_MD_CTX_init');
+	EVP_MD_CTX_init(@mctx);
+        log('EVP_DigestSignInit');
+	rv := EVP_DigestSignInit(@mctx, @pkctx, md, nil, pkey);
+        log('X509_sign_ctx');
+	if (rv > 0) then rv := X509_sign_ctx(cert, @mctx);
+        log('EVP_MD_CTX_cleanup');
+	EVP_MD_CTX_cleanup(@mctx);
+	if rv > 0 then result:= 1 else result:= 0;
+end;
+
+function signreq(filename:string):boolean;
+const
+   LN_commonName=                   'commonName';
+   NID_commonName=                  13;
+var
+ret:integer = 0;
+pkey:PEVP_PKEY=nil;
+pktmp:PEVP_PKEY=nil;
+rsa:pRSA=nil;
+x509_ca:pX509=nil;
+x509_cert:pX509=nil;
+X509_REQ:pX509_REQ=nil;
+bp:pBIO;
+serial:integer = 1;
+days:long = 3650 * 24 * 3600; // 10 years
+subject:pX509_NAME = nil;
+tmpname:pX509_NAME = nil;
+//test
+cert_entry:pX509_NAME_ENTRY=nil;
+entryData:pASN1_STRING;
+cn:ppansichar;
+label free_all;
+begin
+  result:=false;
+  // load ca
+  bp := BIO_new_file(pchar('ca.crt'), 'r+');
+  log('PEM_read_bio_X509');
+  x509_ca:=PEM_read_bio_X509(bp,nil,nil,nil);
+  BIO_free(bp);
+  if x509_ca=nil then goto free_all;
+  //loadCAPrivateKey
+  bp := BIO_new_file(pchar('ca.key'), 'r+');
+  log('PEM_read_bio_RSAPrivateKey');
+  rsa:=PEM_read_bio_RSAPrivateKey   (bp,nil,nil,nil);
+  BIO_free(bp);
+  if rsa=nil then goto free_all;
+  log('EVP_PKEY_new');
+  pkey := EVP_PKEY_new();
+  log('EVP_PKEY_assign_RSA');
+  EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
+  // load X509 Req
+  bp := BIO_new_file(pchar('request.csr'), 'r+');
+  log('PEM_read_bio_X509_REQ');
+  X509_REQ := PEM_read_bio_X509_REQ(bp, nil, nil, nil);
+  BIO_free(bp);
+  if X509_REQ=nil then goto free_all;
+  //
+  x509_cert := X509_new();
+  // set version to X509 v3 certificate
+  log('X509_set_version');
+  X509_set_version(x509_cert,2);
+  // set serial
+  log('X509_get_serialNumber');
+  ASN1_INTEGER_set(X509_get_serialNumber(x509_cert), serial);
+  // set issuer name frome ca
+  log('X509_set_issuer_name');
+  X509_set_issuer_name(x509_cert, X509_get_subject_name(x509_ca ));
+  //test ok
+  {
+  cert_entry := X509_NAME_get_entry(X509_get_subject_name(x509_ca ),X509_NAME_get_index_by_NID(X509_get_subject_name(x509_ca ), NID_commonName, 0));
+  entryData := X509_NAME_ENTRY_get_data( cert_entry );
+  ASN1_STRING_to_UTF8(CN, entryData);
+  writeln(strpas(cn^));
+  }
+  // set time
+  X509_gmtime_adj(X509_get_notBefore(x509_cert), 0);
+  X509_gmtime_adj(X509_get_notAfter(x509_cert), days);
+  // set subject from req
+  //log('X509_REQ_get_subject_name');
+  //tmpname := X509_REQ_get_subject_name(X509_REQ);
+  //log('X509_NAME_dup');
+  //subject := X509_NAME_new;
+  //if tmpname<>nil then subject := X509_NAME_dup(tmpname);
+  //ASN1_item_dup(PASN1_ITEM(tmpname), subject);
+  //log('X509_NAME_add_entry_by_txt');
+  //X509_NAME_add_entry_by_txt(subject, 'CN', MBSTRING_ASC,pchar('localhost'), -1, -1, 0);
+  log('X509_set_subject_name');
+  X509_set_subject_name(x509_cert, X509_REQ_get_subject_name(X509_REQ));
+  //X509_set_subject_name(x509_cert, subject);
+  // set pubkey from req
+  pktmp := X509_REQ_get_pubkey(X509_REQ);
+  log('X509_set_pubkey');
+  ret := X509_set_pubkey(x509_cert, pktmp);
+  EVP_PKEY_free(pktmp);
+  //do_X509_sign;
+  log('do_X509_sign');
+  do_X509_sign(x509_cert, pkey, EVP_sha1());
+  //or simpler?
+  //X509_sign(x509_cert, pkey,EVP_sha1());
+  //
+  bp := BIO_new_file(pchar(filename), 'w+');
+  log('PEM_write_bio_X509');
+  PEM_write_bio_X509(bp,x509_cert);
+  BIO_free(bp);
+  //
+  free_all:
+
+  	X509_free(x509_cert);
+  	//BIO_free_all(out);
+
+  	X509_REQ_free(X509_REQ);
+  	X509_free(x509_ca);
+  	EVP_PKEY_free(pkey);
+
+  	result:= ret = 1;
+
 end;
 
 {
@@ -149,7 +354,7 @@ These certificates are mainly used on the Windows platform.
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -> encrypted private key
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
-function mkcert:boolean;
+function mkCAcert(cn:string):boolean;
 var
     pkey:PEVP_PKEY;
     rsa:pRSA;
@@ -158,6 +363,8 @@ var
     hfile:thandle=thandle(-1);
     f:file;
     bp:pBIO;
+    //
+    bc:pBASIC_CONSTRAINTS;
 begin
 result:=false;
   //OpenSSL provides the EVP_PKEY structure for storing an algorithm-independent private key in memory
@@ -188,25 +395,37 @@ X509_set_pubkey(x509, pkey);
 //Since this is a self-signed certificate, we set the name of the issuer to the name of the subject
 log('X509_get_subject_name');
 name := X509_get_subject_name(x509);
-X509_NAME_add_entry_by_txt(name, 'C',  MBSTRING_ASC,pchar('FR'), -1, -1, 0);
-X509_NAME_add_entry_by_txt(name, 'O',  MBSTRING_ASC,pchar('MyCompany Inc.'), -1, -1, 0);
-X509_NAME_add_entry_by_txt(name, 'CN', MBSTRING_ASC,pchar('localhost'), -1, -1, 0);
+//X509_NAME_add_entry_by_txt(name, 'C',  MBSTRING_ASC,pchar('FR'), -1, -1, 0);
+//X509_NAME_add_entry_by_txt(name, 'O',  MBSTRING_ASC,pchar('MyCompany Inc.'), -1, -1, 0);
+X509_NAME_add_entry_by_txt(name, 'CN', MBSTRING_ASC,pchar(cn), -1, -1, 0);
 //Now we can actually set the issuer name:
 log('X509_set_issuer_name');
 X509_set_issuer_name(x509, name);
+{
+bc:=BASIC_CONSTRAINTS_new;
+bc^.ca :=1;
+X509_add1_ext_i2d(x509, NID_basic_constraints,bc,1,0 ); //'critical,CA:TRUE'
+}
+//add_ext(x509, NID_basic_constraints, 'critical,CA:TRUE');
+//add_ext(x509p, NID_key_usage, 'critical,keyCertSign,cRLSign');
+//add_ext(x509p, NID_subject_key_identifier, 'hash');
 //And finally we are ready to perform the signing process. We call X509_sign with the key we generated earlier. The code for this is painfully simple:
 log('X509_sign');
 X509_sign(x509, pkey, EVP_sha1());
 
 //write out to disk
 
-bp := BIO_new_file(pchar(GetCurrentDir+'\private.key'), 'w+');
+bp := BIO_new_file(pchar(GetCurrentDir+'\ca.key'), 'w+');
 //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
 //if you want a prompt for passphrase
+log('PEM_write_bio_PrivateKey');
 PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+BIO_free(bp);
 
-bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
+bp := BIO_new_file(pchar(GetCurrentDir+'\ca.crt'), 'w+');
+log('PEM_write_bio_X509');
 PEM_write_bio_X509(bp,x509);
+BIO_free(bp);
 //
 //bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
 //PEM_write_bio_X509(bp,x509);
@@ -243,6 +462,7 @@ result:=false;
         bp := BIO_new_file(pchar(GetCurrentDir+'\'+keyfile), 'w+');
         //the private key will have no password
         log('PEM_write_bio_RSAPrivateKey');
+        log('no password...');
         ret := PEM_write_bio_RSAPrivateKey(bp, rsa, nil, nil, 0, nil, nil);
 	BIO_free(bp);
 
@@ -263,6 +483,7 @@ result:=false;
 	X509_NAME_add_entry_by_txt(name, 'CN', MBSTRING_ASC,pchar(cn), -1, -1, 0);
         log('X509_REQ_set_subject_name');
         ret:=X509_REQ_set_subject_name(Req, name); //since X509_REQ_get_subject_name(req) failed on me
+        X509_NAME_free(name);
 
         log('X509_REQ_sign');
 	X509_REQ_sign(req, key, EVP_sha1());
@@ -495,10 +716,9 @@ begin
 	if ret <> 1 then goto free_all;
 
 	rsa := RSA_new();
-	ret := RSA_generate_key_ex(rsa, bits, bne, nil);
+        log('1. generate rsa key');
+        ret := RSA_generate_key_ex(rsa, bits, bne, nil);
 	if ret <> 1 then goto free_all;
-        log('1. generate rsa key OK');
-
 
 
 	// 2. save public key
@@ -508,15 +728,16 @@ begin
         pkey := EVP_PKEY_new();
         log('EVP_PKEY_assign_RSA');
         EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
+        log('2. save public key OK');
         ret:=PEM_write_bio_PUBKEY (bp_public ,pkey);
 	if ret <>1 then goto free_all;
-        log('2. save public key OK');
 
 	// 3. save private key
 	bp_private := BIO_new_file(pchar(GetCurrentDir+'\private.pem'), 'w+');
         //the private key will have no password
-	ret := PEM_write_bio_RSAPrivateKey(bp_private, rsa, nil, nil, 0, nil, nil);
         log('3. save private key');
+        log('no password...');
+	ret := PEM_write_bio_RSAPrivateKey(bp_private, rsa, nil, nil, 0, nil, nil);
 
 	// 4. free
 free_all:

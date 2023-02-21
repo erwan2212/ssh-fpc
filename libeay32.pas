@@ -297,10 +297,44 @@ type
  {$IFEND}
 {$ENDIF}
 
+TC_INT   = LongInt;
+PC_INT   = ^TC_INT;
+TC_UINT  = LongWord;
+PC_UINT  = ^TC_UINT;
+TC_LONG  = LongInt;
+PC_LONG = ^TC_LONG;
+TC_ULONG = LongWord;
+PC_ULONG = ^TC_ULONG;
+TC_ULONGLONG = qword;
+
+
   pSTACK = pointer;
 
   // ASN1 types
   pASN1_OBJECT = pointer;
+
+  PASN1_ITEM = ^ASN1_ITEM;
+  PASN1_ITEM_EXP = PASN1_ITEM;
+
+  ASN1_TEMPLATE = record
+    flags : TC_ULONG;         // Various flags
+    tag : TC_LONG;            // tag; not used if no tagging
+    offset : TC_ULONG;        // Offset of this field in structure
+    field_name : PAnsiChar;   // Field name
+    item : PASN1_ITEM_EXP;    // Relevant ASN1_ITEM or ASN1_ADB
+  end;
+
+  PASN1_TEMPLATE = ^ASN1_TEMPLATE;
+  ASN1_ITEM = record
+    itype : Char;               // The item type; primitive; SEQUENCE; CHOICE or extern
+    utype : TC_LONG;            // underlying type
+    templates : PASN1_TEMPLATE; // If SEQUENCE or CHOICE this contains the contents
+    tcount : TC_LONG;           // Number of templates if SEQUENCE or CHOICE
+    funcs : Pointer;            // functions that handle this type
+    size : TC_LONG;             // Structure size (usually)
+    sname : PAnsiChar;            // Structure name
+  end;
+
   pASN1_STRING = ^ASN1_STRING;
   ASN1_STRING = record
 	length: integer;
@@ -521,6 +555,8 @@ type
       32: (mdc2: MDC2_CTX);
     end;
 
+
+
   pX509_NAME_ENTRY = ^X509_NAME_ENTRY;
   X509_NAME_ENTRY = record
     obj: pASN1_OBJECT;
@@ -593,10 +629,31 @@ type
     depth: integer;
     end;
 
-  pX509V3_CTX = pointer;
+  //pX509V3_CTX = pointer;
+  {
+  X509_CRL = record
+    crl : PX509_CRL_INFO;
+    sig_alg : PX509_ALGOR;
+    signature : PASN1_BIT_STRING;
+    references : TC_Int;
+    flags: TC_INT;
+    akid: PAUTHORITY_KEYID;
+    idp: Pointer;
+    idp_flags: TC_INT;
+    idp_reason: TC_INT;
+    crl_number: PASN1_INTEGER;
+    base_crl_number: PASN1_INTEGER;
+    sha1_hash: array[0..SHA_DIGEST_LENGTH-1] of AnsiChar;
+    issuers: PSTACK_OF;
+    meth: PX509_CRL_METHOD;
+    meth_data: Pointer;
+  end;
+  PX509_CRL = ^X509_CRL;
+  }
 
   pX509_REQ = ^X509_REQ;
   pX509_REQ_INFO = ^X509_REQ_INFO;
+  {
   X509_REQ_INFO = record
 	asn1: pointer;
 	length: integer;
@@ -606,12 +663,62 @@ type
 	attributes: pointer;
 	req_kludge: integer;
 	end;
+  }
+
+  {X509_PUBKEY = record
+      algor : PX509_ALGOR;
+      public_key : PASN1_BIT_STRING;
+      pkey : PEVP_PKEY;
+    end;
+  PPX509_PUBKEY =^PX509_PUBKEY;
+  }
+  ASN1_ENCODING = record
+    enc: PAnsiChar;
+    len: TC_LONG;
+    modified: TC_INT;
+  end;
+  PASN1_ENCODING = ^ASN1_ENCODING;
+  X509_REQ_INFO = record
+      enc: ASN1_ENCODING;
+      version: PASN1_INTEGER;
+      subject: PX509_NAME;
+      pubkey: pointer; //PX509_PUBKEY;
+      attributes: pointer; //PSTACK_OF_X509_ATTRIBUTE;
+    end;
+
   X509_REQ = record
 	req_info: pX509_REQ_INFO;
 	sig_alg: pointer;
 	signature: pointer;
 	references: integer;
 	end;
+
+  PSTACK_OF_CONF_VALUE = PSTACK;
+   PPSTACK_OF_CONF_VALUE = ^PSTACK_OF_CONF_VALUE;
+
+  PX509V3_CONF_METHOD = ^X509V3_CONF_METHOD;
+    X509V3_CONF_METHOD = record
+      get_string : function(db : Pointer; section, value : PAnsiChar) : PAnsiChar; cdecl;
+      get_section : function(db : Pointer; section : PAnsiChar) : PSTACK_OF_CONF_VALUE; cdecl;
+      free_string : procedure(db : Pointer; _string : PAnsiChar); cdecl;
+      free_section : procedure (db : Pointer; section : PSTACK_OF_CONF_VALUE);
+    end;
+
+    pX509_CRL = pointer;
+
+    V3_EXT_CTX = record
+      flags : TC_INT;
+      issuer_cert : PX509;
+      subject_cert : PX509;
+      subject_req : PX509_REQ;
+      crl : PX509_CRL;
+      db_meth : X509V3_CONF_METHOD;
+      db : Pointer;
+    end;
+
+    X509V3_CTX = V3_EXT_CTX;
+    PX509V3_CTX = ^X509V3_CTX;
+
 
   pX509_EXTENSION = ^X509_EXTENSION;
   X509_EXTENSION = record
@@ -624,7 +731,7 @@ type
 	end;
   pSTACK_OFX509_EXTENSION = pointer;
 
-  pX509_CRL = pointer;
+
 
   pX509_SIG = ^X509_SIG;
   X509_SIG = record
@@ -673,6 +780,28 @@ type
     save_parameters: integer;
     attributes: pSTACK_OFX509;
     end;
+
+  PEVP_PKEY_CTX = ^EVP_PKEY_CTX;
+     PPEVP_PKEY_CTX = ^PEVP_PKEY_CTX;
+
+
+
+       //EVP_SIGN_METHOD = function(_type: TC_INT; m: PAnsiChar; m_length: TC_UINT; sigret: PAnsiChar; var siglen: TC_UINT; key: Pointer): TC_INT; cdecl;
+       //EVP_VERIFY_METHOD = function(_type: TC_INT; m: PAnsiChar; m_length: TC_UINT; sigbuf: PAnsiChar; siglen: TC_UINT; key: Pointer): TC_INT; cdecl;
+       //EVP_PKEY_gen_cb = function(ctx: PEVP_PKEY_CTX): TC_INT; cdecl;
+
+      EVP_PKEY_CTX = record
+           pmeth: pointer; //PEVP_PKEY_METHOD;
+           engine: pointer; //PENGINE;
+           pkey: PEVP_PKEY;
+           peerkey: PEVP_PKEY;
+           operation: TC_INT;
+         data: Pointer;
+           app_data: Pointer;
+           pkey_gencb: pointer; //EVP_PKEY_gen_cb;
+           keygen_info: PC_INT;
+         keygen_info_count: TC_INT;
+         end;
 
   pPKCS7_SIGNER_INFO = pointer;
   pSTACK_OFPKCS7_SIGNER_INFO = pointer;
@@ -960,6 +1089,9 @@ procedure ASN1_STRING_set_default_mask(mask: cardinal); cdecl;
 function ASN1_STRING_get_default_mask: cardinal; cdecl;
 function ASN1_TIME_print(fp: pBIO; a: pASN1_TIME): integer; cdecl;
 
+function ASN1_item_dup(it: PASN1_ITEM; x: pointer): pointer; cdecl;
+function ASN1_STRING_to_UTF8(_out: PPAnsiChar; _in: PASN1_STRING): TC_INT; cdecl ;
+
 // OBJ functions
 function OBJ_obj2nid(asn1_object: pointer): integer; cdecl;
 function OBJ_txt2nid(s: PCharacter): integer; cdecl;
@@ -1077,6 +1209,16 @@ function EVP_PKEY_assign(pkey: pEVP_PKEY; key_type: integer;
 //function EVP_MD_CTX_size(e: pEVP_MD_CTX): integer;
 function EVP_MD_CTX_copy(_out: pEVP_MD_CTX; _in: pEVP_MD_CTX): integer; cdecl;
 
+
+
+function EVP_MD_CTX_create(): PEVP_MD_CTX; cdecl;
+procedure EVP_MD_CTX_destroy(ctx: PEVP_MD_CTX); cdecl;
+function EVP_MD_CTX_cleanup(ctx: PEVP_MD_CTX): TC_INT; cdecl;
+procedure EVP_MD_CTX_init(ctx: PEVP_MD_CTX); cdecl;
+//function EVP_DigestSignInit(ctx: PEVP_MD_CTX; pctx: PPEVP_PKEY_CTX; const _type: PEVP_MD; e: PENGINE; pkey: PEVP_PKEY): TC_INT; cdecl;
+function EVP_DigestSignInit(ctx: PEVP_MD_CTX; pctx: PPEVP_PKEY_CTX; const _type: PEVP_MD; e: pointer; pkey: PEVP_PKEY): TC_INT; cdecl;
+function X509_sign_ctx(x: PX509; ctx: PEVP_MD_CTX): TC_INT; cdecl;
+
 // Crypt functions
 function EVP_enc_null: pEVP_CIPHER; cdecl;
 function EVP_des_ecb: pEVP_CIPHER; cdecl;
@@ -1173,6 +1315,9 @@ function X509_NAME_get_entry(name: pX509_NAME; loc: integer): pX509_NAME_ENTRY; 
 function X509_NAME_get_text_by_NID(name: pX509_NAME; nid: integer; buf: PCharacter;
     len: integer): integer; cdecl;
 
+function X509_NAME_get_index_by_NID(name: PX509_NAME; _nid: TC_INT; _lastpos: TC_INT): TC_INT; cdecl;
+function X509_NAME_ENTRY_get_data(ne: PX509_NAME_ENTRY): PASN1_STRING; cdecl;
+
 // X.509 function
 function X509_new: pX509; cdecl;
 procedure X509_free(a: pX509); cdecl;
@@ -1207,6 +1352,12 @@ function X509V3_EXT_i2d(ext_nid: integer; crit: integer; ext_struc: pointer):
 function X509V3_EXT_conf_nid(conf: pointer; ctx: pointer;
     ext_nid: integer; value: PCharacter): pX509_EXTENSION; cdecl;
 
+function BASIC_CONSTRAINTS_new: PBASIC_CONSTRAINTS; cdecl;
+function X509_add1_ext_i2d(x: PX509; _nid: TC_INT; value: Pointer; _crit: TC_INT; flags: TC_ULONG): TC_INT; cdecl;
+function X509_add_ext(cert: PX509; ext: PX509_EXTENSION; loc: TC_Int): TC_Int cdecl;
+procedure X509_EXTENSION_free (ex: Pointer) cdecl ;
+
+
 function X509_sign(x: pX509; pkey: pEVP_PKEY; const md: pEVP_MD): integer; cdecl;
 function X509_digest(x: pX509; const _type: pEVP_MD; md: pointer; var mdlen: cardinal): integer; cdecl;
 function X509_set_issuer_name(x: pX509; name: pX509_NAME): integer; cdecl;
@@ -1215,7 +1366,10 @@ procedure X509V3_set_ctx(ctx: pX509V3_CTX; issuer: pX509; subject: pX509;
     req: pX509_REQ; crl: pX509_CRL; flags: integer);
 procedure X509_SIG_free(a: pX509_SIG); cdecl;
 
+
 function X509_PUBKEY_get(key: pointer): pEVP_PKEY; cdecl;
+
+function X509_NAME_dup(x:pX509_NAME):pX509_NAME; cdecl;
 
 function X509_REQ_new: pX509_REQ; cdecl;
 procedure X509_REQ_free(req: pX509_REQ); cdecl;
@@ -1230,6 +1384,8 @@ function X509_REQ_add_extensions(req: pX509_REQ;
 function X509_REQ_set_pubkey(req: pX509_REQ; pkey: pEVP_PKEY): integer; cdecl;
 function X509_REQ_get_pubkey(req: pX509_REQ): pEVP_PKEY; cdecl;
 function X509_REQ_sign(req: pX509_REQ; pkey: pEVP_PKEY; const md: pEVP_MD): integer; cdecl;
+
+
 
 // X.509 collections
 function X509_STORE_new: pX509_STORE; cdecl;
@@ -1278,7 +1434,7 @@ function PEM_write_bio_X509(bp: pBIO; x: pX509): integer; cdecl;
 function PEM_read_bio_X509_AUX(bp: pBIO; var x: pX509; cb: TPWCallbackFunction;
     u: pointer): pX509; cdecl;
 function PEM_write_bio_X509_AUX(bp: pBIO; x: pX509): integer; cdecl;
-function PEM_read_bio_X509_REQ(bp: pBIO; var x: pX509_REQ; cb: TPWCallbackFunction;
+function PEM_read_bio_X509_REQ(bp: pBIO; {var} x: pX509_REQ; cb: TPWCallbackFunction;
     u: pointer): pX509_REQ; cdecl;
 function PEM_write_bio_X509_REQ(bp: pBIO; x: pX509_REQ): integer; cdecl;
 function PEM_read_bio_X509_CRL(bp: pBIO; var x: pX509_CRL; cb: TPWCallbackFunction;
@@ -1636,6 +1792,10 @@ procedure ASN1_STRING_set_default_mask; external LIBEAY_DLL_NAME {$IFDEF USE_DEL
 function ASN1_STRING_get_default_mask; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function ASN1_TIME_print; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
+function ASN1_item_dup; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function ASN1_STRING_to_UTF8; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+
 function OBJ_obj2nid; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function OBJ_txt2nid; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function OBJ_txt2obj; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1834,6 +1994,15 @@ function EVP_MD_CTX_size(e: pEVP_MD_CTX): integer;
   result := EVP_MD_size(e^.digest);
   end;
 
+
+function X509_sign_ctx; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function EVP_DigestSignInit; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+procedure EVP_MD_CTX_init; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function EVP_MD_CTX_cleanup; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function EVP_MD_CTX_create; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+procedure EVP_MD_CTX_destroy; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+
 function EVP_MD_CTX_copy; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
 function EVP_enc_null; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1902,6 +2071,11 @@ function X509_NAME_add_entry_by_txt; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYE
 function X509_NAME_get_entry; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_NAME_get_text_by_NID; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
+function X509_NAME_get_index_by_NID; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function X509_NAME_ENTRY_get_data; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+
+
 function X509_new; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 procedure X509_free; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_print; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1944,6 +2118,13 @@ function X509V3_EXT_d2i; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$E
 function X509V3_EXT_i2d; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509V3_EXT_conf_nid; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
+
+function BASIC_CONSTRAINTS_new; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function X509_add1_ext_i2d; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+function X509_add_ext; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+procedure X509_EXTENSION_free; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+
 function X509_sign; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_digest; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_set_issuer_name; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1951,7 +2132,10 @@ function X509_set_subject_name; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}del
 procedure X509V3_set_ctx; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 procedure X509_SIG_free; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
+
 function X509_PUBKEY_get; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+function X509_NAME_dup; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
 function X509_REQ_new; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 procedure X509_REQ_free; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
@@ -1963,11 +2147,14 @@ result := ASN1_INTEGER_get(req.req_info.version);
 end;
 
 function X509_REQ_set_subject_name; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+//function X509_REQ_get_subject_name; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
 
 function X509_REQ_get_subject_name(req: pX509_REQ): pX509_NAME;
 begin
 result := req.req_info.subject;
 end;
+
 
 function X509_REQ_add1_attr_by_txt; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function X509_REQ_add_extensions; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
