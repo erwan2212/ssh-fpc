@@ -11,12 +11,12 @@ uses
 procedure LoadSSL;
 procedure FreeSSL;
 function generate_rsa_key:boolean;
-function mkCAcert(cn:string):boolean;
+function mkCAcert(cn:string;privatekey:string=''):boolean;
 function mkreq(cn:string;keyfile,csrfile:string):boolean;
 function signreq(filename:string):boolean;
 function selfsign(subject:string):boolean;
 function Convert2PEM(filename,export_pwd:string):boolean;
-function Convert2PKCS12(filename,export_pwd:string):boolean;
+function Convert2PKCS12(filename,export_pwd,privatekey,cert:string):boolean;
 
 function EncryptPub(sometext:string;var encrypted:string):boolean;
 function DecryptPriv(ACryptedData:string):boolean;
@@ -44,7 +44,187 @@ begin
   ERR_free_strings;
 end;
 
-function Convert2PKCS12(filename,export_pwd:string):boolean;
+function LoadPublicKey(KeyFile: string) :pEVP_PKEY ;
+var
+  mem: pBIO;
+  k: pEVP_PKEY;
+  rc:integer=0;
+begin
+  k:=nil;
+  mem := BIO_new(BIO_s_file()); //BIO типа файл
+  log('BIO_read_filename');
+  rc:=BIO_read_filename(mem, PAnsiChar(KeyFile)); // чтение файла ключа в BIO
+  log(inttostr(rc));
+  try
+    log('PEM_read_bio_PUBKEY');
+    result := PEM_read_bio_PUBKEY(mem, k, nil, nil); //преобразование BIO  в структуру pEVP_PKEY, третий параметр указан nil, означает для ключа не нужно запрашивать пароль
+  finally
+    BIO_free_all(mem);
+  end;
+end;
+
+function LoadPrivateKey(KeyFile: string) :pEVP_PKEY;
+var
+  mem: pBIO;
+  k: pEVP_PKEY;
+begin
+  k := nil;
+  mem := BIO_new(BIO_s_file());
+  BIO_read_filename(mem, PAnsiChar(KeyFile));
+  try
+    log('PEM_read_bio_PrivateKey');
+    result := PEM_read_bio_PrivateKey(mem, k, nil, nil);
+  finally
+    BIO_free_all(mem);
+  end;
+end;
+
+function LoadPEMFile(filePath: string): PBio;
+var
+{$IFNDEF MSWINDOWS}
+  LEncoding: TEncoding;
+  LOffset: Integer;
+{$ENDIF}
+  Buffer: TBytes;
+  Stream: TStream;
+begin
+  log('LoadPEMFile');
+  Stream := TFileStream.Create(filePath, fmOpenRead or fmShareDenyWrite);
+  try
+    SetLength(Buffer, Stream.size);
+    Stream.ReadBuffer(Buffer[0], Stream.size);
+{$IFNDEF MSWINDOWS}
+{On traite les problèmes d'encodage de flux sur les plateformes différentes de Windows}
+    LEncoding := nil;
+    LOffset := TEncoding.GetBufferEncoding(Buffer, LEncoding);
+    Buffer := LEncoding.Convert(LEncoding, TEncoding.UTF8, Buffer, LOffset,
+      Length(Buffer) - LOffset);
+{$ENDIF}
+    Result := BIO_new_mem_buf(@Buffer[0], Length(Buffer));
+  finally
+    Stream.free;
+  end;
+end;
+
+{
+Importer une clé publique RSA
+Un fichier au format PEM contenant une clé publique RSA
+commence par —–BEGIN PUBLIC KEY—–
+puis est suivi de la clé en Base64
+et se termine par —–END PUBLIC KEY—–.
+}
+function FromOpenSSLPublicKey(filePath: string): pRSA;
+var
+  KeyBuffer: PBIO;
+  pkey: PEVP_PKEY;
+  x: pEVP_PKEY;
+begin
+  log('FromOpenSSLPublicKey');
+  x:=nil;
+  KeyBuffer := LoadPEMFile(filePath);
+  if KeyBuffer = nil then
+    raise Exception.Create('Impossible de charger le buffer');
+  try
+    pkey := PEM_read_bio_PUBKEY(KeyBuffer, x, nil, nil);
+    if not Assigned(pkey) then
+      raise Exception.Create('Impossible de charger la clé publique');
+    try
+      Result := EVP_PKEY_get1_RSA(pkey);
+      if not Assigned(Result) then
+        raise Exception.Create('Impossible de charger la clé publique RSA');
+    finally
+      EVP_PKEY_free(pkey);
+    end;
+  finally
+    BIO_free(KeyBuffer);
+  end;
+end;
+{
+Importer une clé privée RSA (chiffrée ou non)
+Un fichier au format PEM contenant un clé privée RSA
+commence par —–BEGIN PRIVATE KEY—– puis est suivi de la clé en Base64
+et se termine par —–END PRIVATE KEY—–.
+Si la clé est chiffrée, alors le fichier au format PEM
+commence par —–BEGIN RSA PRIVATE KEY—– puis est suivi de Proc-Type: 4,ENCRYPTED.
+Ensuite, il y a des informations sur l’algorithme utilisé pour chiffrer la clé (par exemple AES-128-CBC)
+puis il y a la clé chiffrée, en Base64.
+Enfin, le fichier se termine par —–END RSA PRIVATE KEY—–.
+}
+function FromOpenSSLPrivateKey(filePath: string; pwd: String): pRSA;
+var
+  KeyBuffer: PBio;
+  p: PReadKeyChar;
+  I: Integer;
+  x: pRSA;
+begin
+  log('FromOpenSSLPrivateKey');
+  x:=nil;
+  KeyBuffer := LoadPEMFile(filePath);
+  if KeyBuffer = nil then
+    raise Exception.Create('Impossible de charger le buffer');
+  try
+    if pwd <> '' then
+    begin
+      p := GetMemory((length(pwd) + 1) * SizeOf(Char));
+      for I := 0 to length(pwd) - 1 do p[I] := ReadKeyChar(pwd[I+1]);
+      p[length(pwd)] := ReadKeyChar(#0);
+    end
+    else
+      p := nil; //password will be prompted
+    try
+      Result := PEM_read_bio_RSAPrivateKey(KeyBuffer, x, nil, p);
+      if not Assigned(Result) then
+        raise Exception.Create('Impossible de charger la clé privée RSA');
+    finally
+{On efface le mot de passe}
+      FillChar(p, SizeOf(p), 0);
+      FreeMem(p);
+    end;
+  finally
+    BIO_free(KeyBuffer);
+  end;
+
+end;
+
+{
+Importer une clé publique RSA à partir d’un certificat X509
+Un fichier au format PEM contenant un certificat X509
+commence par —–BEGIN CERTIFICATE—– puis est suivi de la clé en Base64
+et se termine par —–END CERTIFICATE—–.
+}
+function FromOpenSSLCert(filePath: string): pRSA;
+var
+  KeyBuffer: PBIO;
+  FX509: pX509;
+  Key: PEVP_PKEY;
+  x: pX509;
+begin
+  log('FromOpenSSLCert');
+  x:=nil;
+  //KeyBuffer := LoadPEMFile(Buffer, Length(Buffer));
+  KeyBuffer := LoadPEMFile(filepath);
+  if KeyBuffer = nil then
+    raise Exception.Create('Impossible de charger le buffer X509');
+  try
+    FX509 := PEM_read_bio_X509(KeyBuffer, x, nil, nil);
+    if not Assigned(FX509) then
+      raise Exception.Create('Impossible de charger le certificat X509');
+    Key := X509_get_pubkey(FX509);
+    if not Assigned(Key) then
+      raise Exception.Create('Impossible de charger la clé publique X509');
+    try
+      Result := EVP_PKEY_get1_RSA(Key);
+      if not Assigned(Result) then
+        raise Exception.Create('Impossible de charger la clé publique RSA');
+    finally
+      EVP_PKEY_free(Key);
+    end;
+  finally
+    BIO_free(KeyBuffer);
+  end;
+end;
+
+function Convert2PKCS12(filename,export_pwd,privatekey,cert:string):boolean;
 var
   err_reason:integer;
   bp:pBIO;
@@ -52,14 +232,14 @@ var
   pkey:pEVP_PKEY; x509_cert:pX509;
   additional_certs:pSTACK_OFX509 = nil;
 begin
-
-  bp := BIO_new_file(pchar('cert.key'), 'r+');
+  log('Convert2PKCS12');
+  bp := BIO_new_file(pchar(privatekey), 'r+');
   log('PEM_read_bio_PrivateKey');
   //password will be prompted
   pkey:=PEM_read_bio_PrivateKey(bp,nil,nil,nil);
   BIO_free(bp);
 
-  bp := BIO_new_file(pchar('cert.crt'), 'r+');
+  bp := BIO_new_file(pchar(cert), 'r+');
   log('PEM_read_bio_X509');
   x509_cert:=PEM_read_bio_X509(bp,nil,nil,nil);
   BIO_free(bp);
@@ -97,7 +277,8 @@ var
     bp:pBIO;
     err_reason:integer;
 begin
-result:=false;
+  log('Convert2PEM');
+  result:=false;
   bp := BIO_new_file(pchar(filename), 'r+');
   log('d2i_PKCS12_bio');
   //decode
@@ -317,6 +498,13 @@ begin
   //or simpler?
   //X509_sign(x509_cert, pkey,EVP_sha1());
   //
+  {
+  bp := BIO_new_file(pchar('signed.key'), 'w+');
+  log('PEM_write_bio_PrivateKey');
+  PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+  BIO_free(bp);
+  }
+  //
   bp := BIO_new_file(pchar(filename), 'w+');
   log('PEM_write_bio_X509');
   PEM_write_bio_X509(bp,x509_cert);
@@ -354,12 +542,12 @@ These certificates are mainly used on the Windows platform.
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -> encrypted private key
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
-function mkCAcert(cn:string):boolean;
+function mkCAcert(cn:string;privatekey:string=''):boolean;
 var
-    pkey:PEVP_PKEY;
-    rsa:pRSA;
-    x509:pX509;
-    name:pX509_NAME;
+    pkey:PEVP_PKEY=nil;
+    rsa:pRSA=nil;
+    x509:pX509=nil;
+    name:pX509_NAME=nil;
     hfile:thandle=thandle(-1);
     f:file;
     bp:pBIO;
@@ -367,17 +555,27 @@ var
     bc:pBASIC_CONSTRAINTS;
 begin
 result:=false;
+  //generate key
   //OpenSSL provides the EVP_PKEY structure for storing an algorithm-independent private key in memory
   log('EVP_PKEY_new');
   pkey := EVP_PKEY_new();
-  //generate key
+  if privatekey='' then
+  begin
   log('RSA_generate_key');
-rsa := RSA_generate_key(
+  rsa := RSA_generate_key(
     2048,   //* number of bits for the key - 2048 is a sensible value */
     RSA_F4, //* exponent - RSA_F4 is defined as 0x10001L */
     nil,   //* callback - can be NULL if we aren't displaying progress */
     nil    //* callback argument - not needed in this case */
-);
+    );
+  end
+  else
+  begin
+  log('Reusing '+privatekey+'...',1);
+  //pkey:=LoadPrivateKey(privatekey);
+  //if pkey=nil then begin log('pkey is nul');exit;end;
+  rsa:=FromOpenSSLPrivateKey(privatekey,''); //password will be prompted
+  end;
 //assign key to our struct
 log('EVP_PKEY_assign_RSA');
 EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
@@ -450,21 +648,34 @@ name:pX509_NAME;
 begin
 result:=false;
 
-
-        log('RSA_generate_key');
-	rsa := RSA_generate_key(
+    if not fileexists(keyfile) then
+    begin
+    log('RSA_generate_key');
+    rsa := RSA_generate_key(
     2048,   //* number of bits for the key - 2048 is a sensible value */
     RSA_F4, //* exponent - RSA_F4 is defined as 0x10001L */
     nil,   //* callback - can be NULL if we aren't displaying progress */
     nil    //* callback argument - not needed in this case */
-);
+    );
+    end
+    else
+    begin
+    log('Reusing '+keyfile+'...',1);
+    //pkey:=LoadPrivateKey(privatekey);
+    //if pkey=nil then begin log('pkey is nul');exit;end;
+    rsa:=FromOpenSSLPrivateKey(keyfile,''); //password will be prompted
+    end;
 
+        //we loaded the file, no need to save it again
+        if not fileexists(keyfile) then
+        begin
         bp := BIO_new_file(pchar(GetCurrentDir+'\'+keyfile), 'w+');
         //the private key will have no password
         log('PEM_write_bio_RSAPrivateKey');
         log('no password...');
         ret := PEM_write_bio_RSAPrivateKey(bp, rsa, nil, nil, 0, nil, nil);
 	BIO_free(bp);
+        end;
 
         log('X509_REQ_new');
 	req := X509_REQ_new();
@@ -499,180 +710,6 @@ result:=false;
 
 result:=true;
 
-end;
-
-function LoadPublicKey(KeyFile: string) :pEVP_PKEY ;
-var
-  mem: pBIO;
-  k: pEVP_PKEY;
-  rc:integer=0;
-begin
-  k:=nil;
-  mem := BIO_new(BIO_s_file()); //BIO типа файл
-  log('BIO_read_filename');
-  rc:=BIO_read_filename(mem, PAnsiChar(KeyFile)); // чтение файла ключа в BIO
-  log(inttostr(rc));
-  try
-    result := PEM_read_bio_PUBKEY(mem, k, nil, nil); //преобразование BIO  в структуру pEVP_PKEY, третий параметр указан nil, означает для ключа не нужно запрашивать пароль
-  finally
-    BIO_free_all(mem);
-  end;
-end;
-
-function LoadPrivateKey(KeyFile: string) :pEVP_PKEY;
-var
-  mem: pBIO;
-  k: pEVP_PKEY;
-begin
-  k := nil;
-  mem := BIO_new(BIO_s_file());
-  BIO_read_filename(mem, PAnsiChar(KeyFile));
-  try
-    result := PEM_read_bio_PrivateKey(mem, k, nil, nil);
-  finally
-    BIO_free_all(mem);
-  end;
-end;
-
-function LoadPEMFile(filePath: string): PBio;
-var
-{$IFNDEF MSWINDOWS}
-  LEncoding: TEncoding;
-  LOffset: Integer;
-{$ENDIF}
-  Buffer: TBytes;
-  Stream: TStream;
-begin
-  Stream := TFileStream.Create(filePath, fmOpenRead or fmShareDenyWrite);
-  try
-    SetLength(Buffer, Stream.size);
-    Stream.ReadBuffer(Buffer[0], Stream.size);
-{$IFNDEF MSWINDOWS}
-{On traite les problèmes d'encodage de flux sur les plateformes différentes de Windows}
-    LEncoding := nil;
-    LOffset := TEncoding.GetBufferEncoding(Buffer, LEncoding);
-    Buffer := LEncoding.Convert(LEncoding, TEncoding.UTF8, Buffer, LOffset,
-      Length(Buffer) - LOffset);
-{$ENDIF}
-    Result := BIO_new_mem_buf(@Buffer[0], Length(Buffer));
-  finally
-    Stream.free;
-  end;
-end;
-
-{
-Importer une clé publique RSA
-Un fichier au format PEM contenant une clé publique RSA
-commence par —–BEGIN PUBLIC KEY—–
-puis est suivi de la clé en Base64
-et se termine par —–END PUBLIC KEY—–.
-}
-function FromOpenSSLPublicKey(filePath: string): pRSA;
-var
-  KeyBuffer: PBIO;
-  pkey: PEVP_PKEY;
-  x: pEVP_PKEY;
-begin
-  x:=nil;
-  KeyBuffer := LoadPEMFile(filePath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer');
-  try
-    pkey := PEM_read_bio_PUBKEY(KeyBuffer, x, nil, nil);
-    if not Assigned(pkey) then
-      raise Exception.Create('Impossible de charger la clé publique');
-    try
-      Result := EVP_PKEY_get1_RSA(pkey);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé publique RSA');
-    finally
-      EVP_PKEY_free(pkey);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
-end;
-{
-Importer une clé privée RSA (chiffrée ou non)
-Un fichier au format PEM contenant un clé privée RSA
-commence par —–BEGIN PRIVATE KEY—– puis est suivi de la clé en Base64
-et se termine par —–END PRIVATE KEY—–.
-Si la clé est chiffrée, alors le fichier au format PEM
-commence par —–BEGIN RSA PRIVATE KEY—– puis est suivi de Proc-Type: 4,ENCRYPTED.
-Ensuite, il y a des informations sur l’algorithme utilisé pour chiffrer la clé (par exemple AES-128-CBC)
-puis il y a la clé chiffrée, en Base64.
-Enfin, le fichier se termine par —–END RSA PRIVATE KEY—–.
-}
-function FromOpenSSLPrivateKey(filePath: string; pwd: String): pRSA;
-var
-  KeyBuffer: PBio;
-  p: PReadKeyChar;
-  I: Integer;
-  x: pRSA;
-begin
-  x:=nil;
-  KeyBuffer := LoadPEMFile(filePath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer');
-  try
-    if pwd <> '' then
-    begin
-      p := GetMemory((length(pwd) + 1) * SizeOf(Char));
-      for I := 0 to length(pwd) - 1 do p[I] := ReadKeyChar(pwd[I+1]);
-      p[length(pwd)] := ReadKeyChar(#0);
-    end
-    else
-      p := nil;
-    try
-      Result := PEM_read_bio_RSAPrivateKey(KeyBuffer, x, nil, p);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé privée RSA');
-    finally
-{On efface le mot de passe}
-      FillChar(p, SizeOf(p), 0);
-      FreeMem(p);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
-
-end;
-
-{
-Importer une clé publique RSA à partir d’un certificat X509
-Un fichier au format PEM contenant un certificat X509
-commence par —–BEGIN CERTIFICATE—– puis est suivi de la clé en Base64
-et se termine par —–END CERTIFICATE—–.
-}
-function FromOpenSSLCert(filePath: string): pRSA;
-var
-  KeyBuffer: PBIO;
-  FX509: pX509;
-  Key: PEVP_PKEY;
-  x: pX509;
-begin
-  x:=nil;
-  //KeyBuffer := LoadPEMFile(Buffer, Length(Buffer));
-  KeyBuffer := LoadPEMFile(filepath);
-  if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer X509');
-  try
-    FX509 := PEM_read_bio_X509(KeyBuffer, x, nil, nil);
-    if not Assigned(FX509) then
-      raise Exception.Create('Impossible de charger le certificat X509');
-    Key := X509_get_pubkey(FX509);
-    if not Assigned(Key) then
-      raise Exception.Create('Impossible de charger la clé publique X509');
-    try
-      Result := EVP_PKEY_get1_RSA(Key);
-      if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé publique RSA');
-    finally
-      EVP_PKEY_free(Key);
-    end;
-  finally
-    BIO_free(KeyBuffer);
-  end;
 end;
 
 //on the remote ssh server, generate the pub key from the private key generated on the client

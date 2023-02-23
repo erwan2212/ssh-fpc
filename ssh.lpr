@@ -43,7 +43,7 @@ var
   ssend,encrypted:string;
   delay:integer;
   //
-  host,username,password,command,pty,privatekey,publickey,filename,remote_filename:string;
+  host,username,password,command,pty,privatekey,publickey,cert,filename,remote_filename:string;
   port:integer=22;
   //
   hfile_:thandle=thandle(-1);
@@ -915,6 +915,7 @@ begin
   cmd.declareString('password', 'password');
   cmd.declareString('privatekey', 'path to a privatekey file');
   cmd.declareString('publickey', 'path to a publickey file, not needed if you have the privatekey');
+  cmd.declareString('cert', 'path to a certificate');
   cmd.declareString('command', 'optional, if none enter shell mode');
   cmd.declareString('pty', 'true|false, default=true is no command provided');
   cmd.declareString('debug', 'true|false','false');
@@ -932,8 +933,8 @@ begin
   cmd.declareflag('genkey', 'generate rsa keys public.pem and private.pem');
   cmd.declareflag('encrypt', 'encrypt a file using public.pem');
   cmd.declareflag('decrypt', 'decrypt a file using private.pem');
-  cmd.declareflag('mkcert', 'make a self sign root cert, write to ca.crt and ca.key');
-  cmd.declareflag('mkreq', 'make a certificate service request, write to request.csr request.key');
+  cmd.declareflag('mkcert', 'make a self sign root cert, read from privatekey (option) & write to ca.crt and ca.key');
+  cmd.declareflag('mkreq', 'make a certificate service request, read from request.csr (if exist) & write to request.csr request.key');
   cmd.declareflag('signreq', 'make a certificate from a csr, read from request.csr ca.crt ca.key');
   cmd.declareflag('selfsign', 'make a self sign cert, write to cert.crt cert.key');
 
@@ -986,8 +987,10 @@ begin
     begin
     try
     LoadSSL;
+    //in
     filename:=cmd.readString('filename');
     if filename='' then filename:='cert.pfx';
+    //
     if Convert2PEM (filename,cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
@@ -999,9 +1002,16 @@ begin
     begin
     try
     LoadSSL;
+    //out
     filename:=cmd.readString('filename');
     if filename='' then filename:='cert.pfx';
-    if Convert2PKCS12 (filename,cmd.readString('password'))=true then writeln('ok') else writeln('not ok');
+    //in
+    privatekey:=cmd.readString('privatekey') ;
+    if privatekey='' then privatekey:='cert.key';
+    cert:=cmd.readString('cert') ;
+    if cert='' then cert:='cert.crt';
+    //
+    if Convert2PKCS12 (filename,cmd.readString('password'),privatekey,cert)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -1012,7 +1022,11 @@ begin
     begin
     try
     LoadSSL;
-    if mkCAcert('_Root Authority_')=true then writeln('ok') else writeln('not ok');
+    //in
+    privatekey:=cmd.readString('privatekey') ;
+    if privatekey='' then privatekey:='';
+    //
+    if mkCAcert('_Root Authority_',privatekey)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
