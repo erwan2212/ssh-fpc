@@ -1363,7 +1363,7 @@ function X509_digest(x: pX509; const _type: pEVP_MD; md: pointer; var mdlen: car
 function X509_set_issuer_name(x: pX509; name: pX509_NAME): integer; cdecl;
 function X509_set_subject_name(x: pX509; name: pX509_NAME): integer; cdecl;
 procedure X509V3_set_ctx(ctx: pX509V3_CTX; issuer: pX509; subject: pX509;
-    req: pX509_REQ; crl: pX509_CRL; flags: integer);
+    req: pX509_REQ; crl: pX509_CRL; flags: integer);cdecl;
 procedure X509_SIG_free(a: pX509_SIG); cdecl;
 
 

@@ -11,7 +11,7 @@ uses
 procedure LoadSSL;
 procedure FreeSSL;
 function generate_rsa_key:boolean;
-function mkCAcert(cn:string;privatekey:string=''):boolean;
+function mkCAcert(cn:string;privatekey:string='';password:string=''):boolean;
 function mkreq(cn:string;keyfile,csrfile:string):boolean;
 function signreq(filename:string):boolean;
 function selfsign(subject:string):boolean;
@@ -150,7 +150,7 @@ Ensuite, il y a des informations sur l’algorithme utilisé pour chiffrer la cl
 puis il y a la clé chiffrée, en Base64.
 Enfin, le fichier se termine par —–END RSA PRIVATE KEY—–.
 }
-function FromOpenSSLPrivateKey(filePath: string; pwd: String): pRSA;
+function FromOpenSSLPrivateKey(filePath: string; pwd: String=''): pRSA;
 var
   KeyBuffer: PBio;
   p: PReadKeyChar;
@@ -161,7 +161,7 @@ begin
   x:=nil;
   KeyBuffer := LoadPEMFile(filePath);
   if KeyBuffer = nil then
-    raise Exception.Create('Impossible de charger le buffer');
+    raise Exception.Create('cannot load buffer');
   try
     if pwd <> '' then
     begin
@@ -174,7 +174,7 @@ begin
     try
       Result := PEM_read_bio_RSAPrivateKey(KeyBuffer, x, nil, p);
       if not Assigned(Result) then
-        raise Exception.Create('Impossible de charger la clé privée RSA');
+        raise Exception.Create('cannot load private key');
     finally
 {On efface le mot de passe}
       FillChar(p, SizeOf(p), 0);
@@ -374,15 +374,19 @@ begin
 end;
 
 function add_ext(cert: PX509; nid: TC_INT; value: PAnsiChar): Boolean;
-var ex: PX509_EXTENSION;
+var ex: PX509_EXTENSION=nil;
     ctx: X509V3_CTX;
 begin
+  log('add_ext');
   Result := false;
   ctx.db := nil;
+  log('X509V3_set_ctx');
   X509V3_set_ctx(@ctx, cert, cert, nil, nil, 0);
+  log('X509V3_EXT_conf_nid');
   ex := X509V3_EXT_conf_nid(nil, @ctx, nid, value);
   if ex <> nil then
   begin
+    log('X509_add_ext');
     X509_add_ext(cert, ex, -1);
     X509_EXTENSION_free(ex);
     Result := True;
@@ -439,9 +443,13 @@ begin
   BIO_free(bp);
   if x509_ca=nil then goto free_all;
   //loadCAPrivateKey
+  {
   bp := BIO_new_file(pchar('ca.key'), 'r+');
   log('PEM_read_bio_RSAPrivateKey');
   rsa:=PEM_read_bio_RSAPrivateKey   (bp,nil,nil,nil);
+  }
+  rsa:=FromOpenSSLPrivateKey('ca.key');
+  //
   BIO_free(bp);
   if rsa=nil then goto free_all;
   log('EVP_PKEY_new');
@@ -542,7 +550,10 @@ These certificates are mainly used on the Windows platform.
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -> encrypted private key
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
-function mkCAcert(cn:string;privatekey:string=''):boolean;
+function mkCAcert(cn:string;privatekey:string='';password:string=''):boolean;
+   const
+      NID_key_usage: integer = 83;
+      NID_subject_key_identifier: integer = 82;
 var
     pkey:PEVP_PKEY=nil;
     rsa:pRSA=nil;
@@ -574,7 +585,11 @@ result:=false;
   log('Reusing '+privatekey+'...',1);
   //pkey:=LoadPrivateKey(privatekey);
   //if pkey=nil then begin log('pkey is nul');exit;end;
-  rsa:=FromOpenSSLPrivateKey(privatekey,''); //password will be prompted
+  try
+  rsa:=FromOpenSSLPrivateKey(privatekey,password); //password will be prompted
+  except
+  on e:exception do begin log(e.message,1);exit;end;
+  end; //try
   end;
 //assign key to our struct
 log('EVP_PKEY_assign_RSA');
@@ -604,9 +619,10 @@ bc:=BASIC_CONSTRAINTS_new;
 bc^.ca :=1;
 X509_add1_ext_i2d(x509, NID_basic_constraints,bc,1,0 ); //'critical,CA:TRUE'
 }
-//add_ext(x509, NID_basic_constraints, 'critical,CA:TRUE');
-//add_ext(x509p, NID_key_usage, 'critical,keyCertSign,cRLSign');
-//add_ext(x509p, NID_subject_key_identifier, 'hash');
+add_ext(x509, NID_basic_constraints, 'critical,CA:TRUE');
+//add_ext(x509,NID_subject_alt_name, 'DNS:www.facebook.com'); //not for root but for signed cert
+add_ext(x509, NID_key_usage, 'critical,keyCertSign,cRLSign');
+add_ext(x509, NID_subject_key_identifier, 'hash');
 //And finally we are ready to perform the signing process. We call X509_sign with the key we generated earlier. The code for this is painfully simple:
 log('X509_sign');
 X509_sign(x509, pkey, EVP_sha1());
@@ -624,10 +640,14 @@ bp := BIO_new_file(pchar(GetCurrentDir+'\ca.crt'), 'w+');
 log('PEM_write_bio_X509');
 PEM_write_bio_X509(bp,x509);
 BIO_free(bp);
-//
-//bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
-//PEM_write_bio_X509(bp,x509);
-//PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+
+//or a bundle
+{
+bp := BIO_new_file(pchar(GetCurrentDir+'\cert.crt'), 'w+');
+PEM_write_bio_X509(bp,x509);
+PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+BIO_free(bp);
+}
 //
 EVP_PKEY_free(pkey);
 X509_free(x509);

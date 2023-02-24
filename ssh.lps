@@ -9,8 +9,8 @@
         <Filename Value="ssh.lpr"/>
         <IsPartOfProject Value="True"/>
         <IsVisibleTab Value="True"/>
-        <TopLine Value="922"/>
-        <CursorPos X="23" Y="939"/>
+        <TopLine Value="913"/>
+        <CursorPos Y="918"/>
         <UsageCount Value="200"/>
         <Loaded Value="True"/>
       </Unit0>
@@ -21,30 +21,28 @@
         <WindowIndex Value="-1"/>
         <TopLine Value="-1"/>
         <CursorPos X="-1" Y="-1"/>
-        <UsageCount Value="179"/>
+        <UsageCount Value="182"/>
       </Unit1>
       <Unit2>
         <Filename Value="opensslutils.pas"/>
         <IsPartOfProject Value="True"/>
         <UnitName Value="OpenSSLUtils"/>
-        <EditorIndex Value="2"/>
-        <TopLine Value="459"/>
-        <CursorPos X="15" Y="405"/>
-        <UsageCount Value="60"/>
-        <Loaded Value="True"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="598"/>
+        <CursorPos Y="612"/>
+        <UsageCount Value="63"/>
       </Unit2>
       <Unit3>
         <Filename Value="utils.pas"/>
         <IsPartOfProject Value="True"/>
         <EditorIndex Value="1"/>
         <CursorPos X="23" Y="13"/>
-        <UsageCount Value="60"/>
+        <UsageCount Value="63"/>
         <Loaded Value="True"/>
       </Unit3>
       <Unit4>
         <Filename Value="libssh2.pas"/>
-        <EditorIndex Value="4"/>
-        <TopLine Value="893"/>
+        <EditorIndex Value="2"/>
         <CursorPos X="10" Y="905"/>
         <UsageCount Value="100"/>
         <Loaded Value="True"/>
@@ -66,134 +64,25 @@
       </Unit6>
       <Unit7>
         <Filename Value="libeay32.pas"/>
-        <EditorIndex Value="3"/>
-        <TopLine Value="1418"/>
-        <CursorPos X="30" Y="1429"/>
-        <UsageCount Value="71"/>
-        <Loaded Value="True"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="1345"/>
+        <CursorPos X="20" Y="1365"/>
+        <UsageCount Value="72"/>
       </Unit7>
     </Units>
-    <JumpHistory Count="30" HistoryIndex="29">
+    <JumpHistory Count="3" HistoryIndex="2">
       <Position1>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="393" Column="36" TopLine="374"/>
-      </Position1>
-      <Position2>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="380" TopLine="375"/>
-      </Position2>
-      <Position3>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="393" Column="9" TopLine="381"/>
-      </Position3>
-      <Position4>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="59" Column="29" TopLine="52"/>
-      </Position4>
-      <Position5>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="430" Column="51" TopLine="411"/>
-      </Position5>
-      <Position6>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="465" Column="21" TopLine="418"/>
-      </Position6>
-      <Position7>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="624" Column="31" TopLine="608"/>
-      </Position7>
-      <Position8>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="415" Column="30" TopLine="411"/>
-      </Position8>
-      <Position9>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="430" Column="9" TopLine="418"/>
-      </Position9>
-      <Position10>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="221" Column="11" TopLine="198"/>
-      </Position10>
-      <Position11>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="571" Column="3" TopLine="559"/>
-      </Position11>
-      <Position12>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="575" Column="85" TopLine="559"/>
-      </Position12>
-      <Position13>
-        <Filename Value="ssh.lpr"/>
-        <Caret Line="992" Column="56" TopLine="1003"/>
-      </Position13>
-      <Position14>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="14" Column="10" TopLine="2"/>
-      </Position14>
-      <Position15>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="192" Column="10" TopLine="180"/>
-      </Position15>
-      <Position16>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="172" Column="63" TopLine="155"/>
-      </Position16>
-      <Position17>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="571" Column="73" TopLine="553"/>
-      </Position17>
-      <Position18>
         <Filename Value="ssh.lpr"/>
         <Caret Line="1028" Column="7" TopLine="1009"/>
-      </Position18>
-      <Position19>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="14" Column="10" TopLine="2"/>
-      </Position19>
-      <Position20>
+      </Position1>
+      <Position2>
         <Filename Value="ssh.lpr"/>
         <Caret Line="1028" Column="7" TopLine="1024"/>
-      </Position20>
-      <Position21>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="14" Column="10" TopLine="2"/>
-      </Position21>
-      <Position22>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="568" TopLine="556"/>
-      </Position22>
-      <Position23>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="653" Column="9" TopLine="642"/>
-      </Position23>
-      <Position24>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="647" Column="10" TopLine="644"/>
-      </Position24>
-      <Position25>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="661" Column="39" TopLine="643"/>
-      </Position25>
-      <Position26>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="571" Column="56" TopLine="553"/>
-      </Position26>
-      <Position27>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="665" Column="81" TopLine="650"/>
-      </Position27>
-      <Position28>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="98" Column="84" TopLine="81"/>
-      </Position28>
-      <Position29>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="574" Column="28" TopLine="558"/>
-      </Position29>
-      <Position30>
-        <Filename Value="opensslutils.pas"/>
-        <Caret Line="663" Column="11" TopLine="649"/>
-      </Position30>
+      </Position2>
+      <Position3>
+        <Filename Value="ssh.lpr"/>
+        <Caret Line="947" TopLine="938"/>
+      </Position3>
     </JumpHistory>
   </ProjectSession>
   <Debugging>
