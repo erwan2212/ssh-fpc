@@ -166,7 +166,8 @@ begin
     LoadSSL;
     filename:=cmd.readString('filename');
     if filename='' then filename:='signed.crt';
-    if signreq(filename)=true then writeln('ok') else writeln('not ok');
+    password:=cmd.readString('password') ;
+    if signreq(filename,password)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;

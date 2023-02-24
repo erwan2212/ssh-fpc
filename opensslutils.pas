@@ -13,7 +13,7 @@ procedure FreeSSL;
 function generate_rsa_key:boolean;
 function mkCAcert(cn:string;privatekey:string='';password:string=''):boolean;
 function mkreq(cn:string;keyfile,csrfile:string):boolean;
-function signreq(filename:string):boolean;
+function signreq(filename:string;password:string=''):boolean;
 function selfsign(subject:string):boolean;
 function Convert2PEM(filename,export_pwd:string):boolean;
 function Convert2PKCS12(filename,export_pwd,privatekey,cert:string):boolean;
@@ -42,6 +42,20 @@ procedure FreeSSL;
 begin
   EVP_cleanup;
   ERR_free_strings;
+end;
+
+function BIO_ReadAnsiString(bp: PBIO): AnsiString;
+var Buf: AnsiString;
+    a: TC_INT;
+begin
+  Result := '';
+    SetLength(Buf, 512);
+    repeat
+     a := BIO_read(bp, @Buf[1], Length(Buf));
+     if a > 0 then
+      Result := Result + Copy(Buf, 1, a);
+    until a <= 0;
+  SetLength(Buf, 0);
 end;
 
 function LoadPublicKey(KeyFile: string) :pEVP_PKEY ;
@@ -352,7 +366,7 @@ begin
    X509_set_subject_name(x, tmp);
 
    X509_set_pubkey(x, pkey);
-   X509_sign(x, pkey, EVP_sha1());
+   X509_sign(x, pkey, EVP_sha256 ());
 
    bp := BIO_new_file(pchar('cert.key'), 'w+');
   //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
@@ -377,7 +391,7 @@ function add_ext(cert: PX509; nid: TC_INT; value: PAnsiChar): Boolean;
 var ex: PX509_EXTENSION=nil;
     ctx: X509V3_CTX;
 begin
-  log('add_ext');
+  log('add_ext '+strpas(value));
   Result := false;
   ctx.db := nil;
   log('X509V3_set_ctx');
@@ -412,7 +426,7 @@ begin
 	if rv > 0 then result:= 1 else result:= 0;
 end;
 
-function signreq(filename:string):boolean;
+function signreq(filename:string;password:string=''):boolean;
 const
    LN_commonName=                   'commonName';
    NID_commonName=                  13;
@@ -447,10 +461,10 @@ begin
   bp := BIO_new_file(pchar('ca.key'), 'r+');
   log('PEM_read_bio_RSAPrivateKey');
   rsa:=PEM_read_bio_RSAPrivateKey   (bp,nil,nil,nil);
-  }
-  rsa:=FromOpenSSLPrivateKey('ca.key');
-  //
   BIO_free(bp);
+  }
+  rsa:=FromOpenSSLPrivateKey('ca.key',password);
+  //
   if rsa=nil then goto free_all;
   log('EVP_PKEY_new');
   pkey := EVP_PKEY_new();
@@ -500,11 +514,16 @@ begin
   log('X509_set_pubkey');
   ret := X509_set_pubkey(x509_cert, pktmp);
   EVP_PKEY_free(pktmp);
+  //
+  add_ext(x509_cert, NID_basic_constraints, 'critical,CA:false');
+  //add_ext(x509,NID_subject_alt_name, 'DNS:www.facebook.com'); //not for root but for signed cert
+  add_ext(x509_cert, NID_key_usage, 'critical,digitalSignature,keyEncipherment');
+  add_ext(x509_cert, NID_subject_key_identifier, 'hash');
   //do_X509_sign;
   log('do_X509_sign');
-  do_X509_sign(x509_cert, pkey, EVP_sha1());
+  do_X509_sign(x509_cert, pkey, EVP_sha256 ());
   //or simpler?
-  //X509_sign(x509_cert, pkey,EVP_sha1());
+  //X509_sign(x509_cert, pkey,EVP_sha256());
   //
   {
   bp := BIO_new_file(pchar('signed.key'), 'w+');
@@ -551,9 +570,6 @@ These certificates are mainly used on the Windows platform.
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.key -nodes -nocerts -> private key only
 //openssl pkcs12 -in INFILE.p12 -out OUTFILE.crt -nokeys -> cert only
 function mkCAcert(cn:string;privatekey:string='';password:string=''):boolean;
-   const
-      NID_key_usage: integer = 83;
-      NID_subject_key_identifier: integer = 82;
 var
     pkey:PEVP_PKEY=nil;
     rsa:pRSA=nil;
@@ -562,6 +578,7 @@ var
     hfile:thandle=thandle(-1);
     f:file;
     bp:pBIO;
+    ret:integer;
     //
     bc:pBASIC_CONSTRAINTS;
 begin
@@ -594,6 +611,14 @@ result:=false;
 //assign key to our struct
 log('EVP_PKEY_assign_RSA');
 EVP_PKEY_assign(pkey,EVP_PKEY_RSA,PCharacter(rsa));
+//Writeln('BN_bn2hex: ', strpas(BN_bn2hex(rsa^.n )));
+{
+bp := BIO_new(BIO_s_mem);
+log('BN_print');
+BN_print(bp, pkey^.pkey.rsa^.n);
+log('BIO_ReadAnsiString');
+Writeln('BN_print: ',BIO_ReadAnsiString(bp));
+}
 //OpenSSL uses the X509 structure to represent an x509 certificate in memory
 log('X509_new');
 x509 := X509_new();
@@ -623,9 +648,10 @@ add_ext(x509, NID_basic_constraints, 'critical,CA:TRUE');
 //add_ext(x509,NID_subject_alt_name, 'DNS:www.facebook.com'); //not for root but for signed cert
 add_ext(x509, NID_key_usage, 'critical,keyCertSign,cRLSign');
 add_ext(x509, NID_subject_key_identifier, 'hash');
+//add_ext(x509, NID_authority_key_identifier, 'keyid:always,issuer:always');
 //And finally we are ready to perform the signing process. We call X509_sign with the key we generated earlier. The code for this is painfully simple:
 log('X509_sign');
-X509_sign(x509, pkey, EVP_sha1());
+X509_sign(x509, pkey, EVP_sha256());
 
 //write out to disk
 
@@ -633,8 +659,9 @@ bp := BIO_new_file(pchar(GetCurrentDir+'\ca.key'), 'w+');
 //PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),pchar(''),0,nil,nil);
 //if you want a prompt for passphrase
 log('PEM_write_bio_PrivateKey');
-PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
+ret:= PEM_write_bio_PrivateKey(bp,pkey,EVP_des_ede3_cbc(),nil,0,nil,nil);
 BIO_free(bp);
+if ret=0 then exit;
 
 bp := BIO_new_file(pchar(GetCurrentDir+'\ca.crt'), 'w+');
 log('PEM_write_bio_X509');
@@ -717,7 +744,7 @@ result:=false;
         X509_NAME_free(name);
 
         log('X509_REQ_sign');
-	X509_REQ_sign(req, key, EVP_sha1());
+	X509_REQ_sign(req, key, EVP_sha256());
 
 	EVP_PKEY_free(key);
 

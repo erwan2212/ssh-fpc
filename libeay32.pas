@@ -136,6 +136,9 @@ const
   NID_pkcs7_signedAndEnveloped = 24;
   NID_basic_constraints = 87;
   NID_subject_alt_name = 85;
+  NID_key_usage: integer = 83;
+  NID_subject_key_identifier: integer = 82;
+  NID_authority_key_identifier = 90;
 
   V_ASN1_INTEGER = $02;
   V_ASN1_ENUMERATED = 10;
@@ -1192,6 +1195,8 @@ function EVP_mdc2: pEVP_MD; cdecl;
 function EVP_ripemd160: pEVP_MD; cdecl;
 function EVP_get_digestbyname(const name: PCharacter): pEVP_MD; cdecl;
 
+function EVP_sha256: PEVP_MD; cdecl;
+
 procedure EVP_DigestInit(ctx: pEVP_MD_CTX; const _type: pEVP_MD); cdecl;
 procedure EVP_DigestUpdate(ctx: pEVP_MD_CTX; const d: Pointer; cnt: cardinal); cdecl;
 procedure EVP_DigestFinal(ctx: pEVP_MD_CTX; md: PCharacter; var s: cardinal); cdecl;
@@ -1935,6 +1940,8 @@ function  EVP_dss1; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF}
 function  EVP_mdc2; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function  EVP_ripemd160; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 function  EVP_get_digestbyname; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
+
+function  EVP_sha256; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 
 function EVP_PKEY_new; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
 procedure EVP_PKEY_free; external LIBEAY_DLL_NAME {$IFDEF USE_DELAYED}delayed{$ENDIF};
