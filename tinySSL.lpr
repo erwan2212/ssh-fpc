@@ -17,7 +17,7 @@ uses
 
 var
   cmd: TCommandLineReader;
-  filename,encrypted,password,privatekey,publickey,cert,cn:string;
+  filename,encrypted,password,privatekey,publickey,cert,cn,alt:string;
   hfile_:thandle=thandle(-1);
   mem_:array[0..8192-1] of char;
   size_:dword=0;
@@ -33,7 +33,8 @@ begin
 
   cmd := TCommandLineReader.create;
   //cmd.declareString('username', 'mandatory');
-  cmd.declareString('cn', 'cn','localhost');
+  cmd.declareString('cn', 'cn');
+  cmd.declareString('alt', 'alternate name');
   cmd.declareString('password', 'password');
   cmd.declareString('privatekey', 'path to a privatekey file');
   cmd.declareString('publickey', 'path to a publickey file, not needed if you have the privatekey');
@@ -49,8 +50,8 @@ begin
   cmd.declareflag('decrypt', 'decrypt a file using private.pem');
 
   cmd.declareflag('mkcert', 'make a self sign root cert, read from privatekey (option) & write to ca.crt and ca.key');
-  cmd.declareflag('mkreq', 'make a certificate service request, read from request.csr (if exist) & write to request.csr request.key');
-  cmd.declareflag('signreq', 'make a certificate from a csr, read from request.csr ca.crt ca.key');
+  cmd.declareflag('mkreq', 'make a certificate service request, read from request.key (if exist) & write to request.csr request.key');
+  cmd.declareflag('signreq', 'make a certificate from a csr, read from a csr filename ca.crt ca.key');
   cmd.declareflag('selfsign', 'make a self sign cert, write to cert.crt cert.key');
 
   cmd.declareflag('p12topem', 'convert a pfx to pem, write to cert.crt and cert.key');
@@ -137,11 +138,16 @@ begin
     begin
     try
     LoadSSL;
+    //out
+    filename:=cmd.readString('filename');
+    if filename='' then filename:='ca.crt';
     //in
     privatekey:=cmd.readString('privatekey') ;
     password:=cmd.readString('password') ;
+    cn:=cmd.readString('cn') ;
+    if cn='' then cn:='_Root Authority_';
     //
-    if mkCAcert('_Root Authority_',privatekey,password)=true then writeln('ok') else writeln('not ok');
+    if mkCAcert(filename,cn,privatekey,password)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -153,7 +159,12 @@ begin
     try
     LoadSSL;
     cn:=cmd.readString('cn') ;
-    if mkreq(cn,'request.key','request.csr')=true then writeln('ok') else writeln('not ok');
+    if cn='' then cn:='localhost';
+    filename:=cmd.readString('filename');
+    if filename='' then filename:='request.csr';
+    privatekey:=cmd.readString('privatekey') ;
+    if privatekey='' then privatekey:='request.key';
+    if mkreq(cn,privatekey,filename)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
@@ -164,10 +175,14 @@ begin
     begin
     try
     LoadSSL;
+    //in
+    cert:=cmd.readString('cert');
+    if cert='' then cert:='ca.crt';
     filename:=cmd.readString('filename');
-    if filename='' then filename:='signed.crt';
+    if filename='' then filename:='request.csr';
     password:=cmd.readString('password') ;
-    if signreq(filename,password)=true then writeln('ok') else writeln('not ok');
+    alt:=cmd.readString('alt') ;
+    if signreq(filename,cert,password,alt)=true then writeln('ok') else writeln('not ok');
     finally
     FreeSSL;
     end;
