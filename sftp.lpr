@@ -26,7 +26,7 @@ var
   tmp,s:string;
   i:integer;
   //
-  host,username,password,privatekey,verb,path,local_filename,dest_filename:string;
+  host,username,password,privatekey,publickey,verb,path,local_filename,dest_filename:string;
   port:integer=22;
   //
   mem:array [0..1023] of char;
@@ -96,6 +96,7 @@ begin
   cmd.declareString('username', 'mandatory');
   cmd.declareString('password', 'password, prompted if empty');
   cmd.declareString('privatekey', 'path to a private key file, optional');
+  cmd.declareString('publickey', 'path to a public key file, optional');
   cmd.declareString('command', 'rmdir mkdir put get dir');
   cmd.declareString('path', 'remote path','/');
   cmd.declareString('local_filename', 'optional, local path');
@@ -114,6 +115,7 @@ begin
   username:=cmd.readstring('username');
   password:=cmd.readstring('password');
   privatekey:=cmd.readstring('privatekey');
+  publickey:=cmd.readstring('publickey');
   verb:=cmd.readstring('command');
   path:=cmd.readstring('path');
   local_filename:=cmd.readstring('local_filename');
@@ -191,7 +193,7 @@ begin
     log(strpas(userauthlist));
     //
 
-    if (privatekey='') and (password='') then
+    if ((privatekey='') and (publickey='')) and (password='') then
       begin
       write('Password for ', host,' : ');
       readln(password);
@@ -208,7 +210,7 @@ begin
     }
     //if not FileExists (password) then
     //  begin
-        if cmd.existsProperty('privatekey')=false then
+        if ((privatekey='') and (publickey='')) and (password<>'') then
         begin
         log('libssh2_userauth_password...');
         if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
@@ -219,17 +221,23 @@ begin
         end;
     //  end
         //else //if not FileExists (password) then
-        if (cmd.existsProperty('privatekey')) and (FileExists (privatekey )) then
+        if (privatekey<>'') or (publickey<>'') then
         begin
         //privatekey:=password;
         log('libssh2_userauth_publickey_fromfile');
         log('private_key:'+privatekey );
+        log('public key:'+publickey  );
         //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
         //public key can be derived from private key so public key can be skipped (good for security...)
         //not relevant here but chmod 0700 id_rsa on a linux ssh client
         //not relevant but from a ssh linux client you can do:
         //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
-        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
+        if (privatekey<>'') and (publickey='') then
+                i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(publickey)},pchar(privatekey),nil);
+        if (publickey<>'') and (privatekey='') then
+                i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),nil{pchar(privatekey)},nil);
+        if (publickey<>'') and (privatekey<>'') then
+                i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),pchar(privatekey),nil);
         if i<>0 then
           begin
           log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
