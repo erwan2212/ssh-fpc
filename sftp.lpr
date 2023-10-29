@@ -26,7 +26,7 @@ var
   tmp,s:string;
   i:integer;
   //
-  host,username,password,privatekey,verb,path,local_filename,dest_filename:string;
+  host,username,password,private_key,verb,path,local_filename,dest_filename:string;
   port:integer=22;
   //
   mem:array [0..1023] of char;
@@ -94,7 +94,8 @@ begin
   cmd.declareString('ip', '192.168.1.254');
   cmd.declareInt('port', '22',22);
   cmd.declareString('username', 'mandatory');
-  cmd.declareString('password', 'password or path to a pub key file, prompted if empty');
+  cmd.declareString('password', 'password, prompted if empty');
+  cmd.declareString('private_key', 'path to a private key file, optional');
   cmd.declareString('command', 'rmdir mkdir put get dir');
   cmd.declareString('path', 'remote path','/');
   cmd.declareString('local_filename', 'optional, local path');
@@ -112,6 +113,7 @@ begin
   port:=cmd.readint('port');
   username:=cmd.readstring('username');
   password:=cmd.readstring('password');
+  private_key:=cmd.readstring('private_key');
   verb:=cmd.readstring('command');
   path:=cmd.readstring('path');
   local_filename:=cmd.readstring('local_filename');
@@ -188,11 +190,13 @@ begin
     userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
     log(strpas(userauthlist));
     //
+    {
     if password='' then
       begin
       write('Password for ', host,' : ');
       readln(password);
       end;
+    }
     {
     log('libssh2_userauth_password...');
     if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
@@ -202,32 +206,36 @@ begin
       end;
     log('Authentication succeeded');
     }
-    if not FileExists (password) then
+    //if not FileExists (password) then
+    //  begin
+        if cmd.existsProperty('private_key')=false then
         begin
         log('libssh2_userauth_password...');
         if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
           begin
           log('Authentication by password failed',1);
           exit;
-          end;
-        log('Authentication succeeded');
-        end
-        else //if not FileExists (password) then
+          end else log('Authentication succeeded');
+        end;
+    //  end
+        //else //if not FileExists (password) then
+        if (cmd.existsProperty('private_key')) and (FileExists (private_key )) then
         begin
-        privatekey:=password;
+        //privatekey:=password;
         log('libssh2_userauth_publickey_fromfile');
+        log('private_key:'+private_key );
         //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
         //public key can be derived from private key so public key can be skipped (good for security...)
         //not relevant here but chmod 0700 id_rsa on a linux ssh client
         //not relevant but from a ssh linux client you can do:
         //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
-        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(privatekey),nil);
+        i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(GetCurrentDir + '\id_rsa.pub')},pchar(private_key),nil);
         if i<>0 then
           begin
           log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
           exit;
-          end;
-        end; //if not FileExists (password) then
+          end else log('Authentication succeeded');
+        end; //if not FileExists (password)
     log('libssh2_sftp_init...');
     sftp_session := libssh2_sftp_init(session);
     if sftp_session=nil then
@@ -242,7 +250,7 @@ begin
     if verb='rename' then
     begin
     log('libssh2_sftp_rename');
-      if libssh2_sftp_rename (sftp_session,pchar(path),pchar(dest_filename ))=0
+      if libssh2_sftp_rename (sftp_session,pchar(dest_filename),pchar(path ))=0
          then log('cannot libssh2_sftp_rename');
     end;
     //
@@ -269,7 +277,8 @@ begin
     begin
     //* Request a file via SFTP */
     log('libssh2_sftp_open');
-    sftp_handle :=libssh2_sftp_open(sftp_session, pchar(path), LIBSSH2_FXF_WRITE or LIBSSH2_FXF_CREAT or LIBSSH2_FXF_TRUNC,
+    if dest_filename ='' then dest_filename :=local_filename ;
+    sftp_handle :=libssh2_sftp_open(sftp_session, pchar(dest_filename), LIBSSH2_FXF_WRITE or LIBSSH2_FXF_CREAT or LIBSSH2_FXF_TRUNC,
                           LIBSSH2_SFTP_S_IRUSR or LIBSSH2_SFTP_S_IWUSR or
                           LIBSSH2_SFTP_S_IRGRP or LIBSSH2_SFTP_S_IROTH);
     if sftp_handle=nil then
@@ -295,13 +304,13 @@ begin
     begin
     //* Request a file via SFTP */
     log('libssh2_sftp_open');
-    sftp_handle :=libssh2_sftp_open(sftp_session, pchar(path), LIBSSH2_FXF_READ, 0);
+    sftp_handle :=libssh2_sftp_open(sftp_session, pchar(dest_filename), LIBSSH2_FXF_READ, 0);
     if sftp_handle=nil then
           begin
           log('cannot libssh2_sftp_open',1);
           exit;
           end;
-    if local_filename ='' then local_filename:=ExtractFileName (path);
+    if local_filename ='' then local_filename:=ExtractFileName (dest_filename);
     hfile := CreateFile(pchar(local_filename ), GENERIC_READ or GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if hfile=thandle(-1) then begin log('invalid handle');exit;end;
     while 1=1 do
