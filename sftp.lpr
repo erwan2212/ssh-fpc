@@ -68,13 +68,20 @@ wsadata:TWSADATA;
 err:longint;
 hostaddr:u_long;
 sin:sockaddr_in;
+HostEnt:PHostEnt;
 begin
   result:=false;
   //
   err := WSAStartup(MAKEWORD(2, 0), wsadata);
   if(err <> 0) then raise exception.Create ('WSAStartup failed with error: '+inttostr(err));
   //
+
   hostaddr := inet_addr(pchar(host));
+  if hostaddr = INADDR_NONE then
+    begin
+    HostEnt:=gethostbyname(pchar(host));
+    hostaddr:=Integer(Pointer(HostEnt^.h_addr^)^);
+    end;
   //
   sock_ := socket(AF_INET, SOCK_STREAM, 0);
   //
