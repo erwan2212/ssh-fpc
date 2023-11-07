@@ -935,6 +935,7 @@ begin
 
   if cmd.existsProperty('ip')=false then
     begin
+    writeln('https://github.com/erwan2212');
     writeln('Usage: ssh --help');
     exit;
     end;
