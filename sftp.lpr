@@ -77,10 +77,11 @@ begin
   //
 
   hostaddr := inet_addr(pchar(host));
+  //not an ip? lets try to resolve hostname
   if hostaddr = INADDR_NONE then
     begin
     HostEnt:=gethostbyname(pchar(host));
-    hostaddr:=Integer(Pointer(HostEnt^.h_addr^)^);
+    if HostEnt <> nil then hostaddr:=Integer(Pointer(HostEnt^.h_addr^)^);
     end;
   //
   sock_ := socket(AF_INET, SOCK_STREAM, 0);
@@ -206,15 +207,7 @@ begin
       readln(password);
       end;
 
-    {
-    log('libssh2_userauth_password...');
-    if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
-      begin
-      log('Authentication by password failed',1);
-      exit;
-      end;
-    log('Authentication succeeded');
-    }
+
     //if not FileExists (password) then
     //  begin
         if ((privatekey='') and (publickey='')) and (password<>'') then
