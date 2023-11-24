@@ -29,12 +29,12 @@ var
   host,username,password,privatekey,publickey,verb,path,local_filename,dest_filename:string;
   port:integer=22;
   //
-  mem:array [0..1023] of char;
+  mem:array [0..(1024*8)-1] of char;
   longentry:array [0..511] of char;
   attrs:LIBSSH2_SFTP_ATTRIBUTES;
   //
   hfile:thandle;
-  size:dword;
+  size,before:dword;
   //
   sock:tsocket;
   //
@@ -284,9 +284,11 @@ begin
     //
     if verb='put' then
     begin
+    if dest_filename ='' then dest_filename :=ExtractFileName (local_filename) ;
+    log('local_filename:'+local_filename );
+    log('dest_filename:'+dest_filename );
     //* Request a file via SFTP */
     log('libssh2_sftp_open');
-    if dest_filename ='' then dest_filename :=local_filename ;
     sftp_handle :=libssh2_sftp_open(sftp_session, pchar(dest_filename), LIBSSH2_FXF_WRITE or LIBSSH2_FXF_CREAT or LIBSSH2_FXF_TRUNC,
                           LIBSSH2_SFTP_S_IRUSR or LIBSSH2_SFTP_S_IWUSR or
                           LIBSSH2_SFTP_S_IRGRP or LIBSSH2_SFTP_S_IROTH);
@@ -297,6 +299,7 @@ begin
           end;
     hfile := CreateFile(pchar(local_filename), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
     if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
+    before:=gettickcount;
     while 1=1 do
       begin
       ReadFile (hfile,mem[0],sizeof(mem),size,nil);
@@ -305,12 +308,16 @@ begin
       if (i<>size) then begin log('libssh2_sftp_write error',1);break;end;
       log('libssh2_sftp_write:'+inttostr(i)+' bytes');
       end; //while 1=1 do
+    log(inttostr(gettickcount-before)+' ms');
     closehandle(hfile);
     libssh2_sftp_close(sftp_handle);
     end;
     // if verb='put' then
     if verb='get' then
     begin
+    //* Request a file via SFTP */
+    log('local_filename:'+local_filename );
+    log('dest_filename:'+dest_filename );
     //* Request a file via SFTP */
     log('libssh2_sftp_open');
     sftp_handle :=libssh2_sftp_open(sftp_session, pchar(dest_filename), LIBSSH2_FXF_READ, 0);
@@ -322,6 +329,7 @@ begin
     if local_filename ='' then local_filename:=ExtractFileName (dest_filename);
     hfile := CreateFile(pchar(local_filename ), GENERIC_READ or GENERIC_WRITE, FILE_SHARE_READ or FILE_SHARE_WRITE, nil, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if hfile=thandle(-1) then begin log('invalid handle');exit;end;
+    before:=gettickcount;
     while 1=1 do
       begin
        i := libssh2_sftp_read(sftp_handle, @mem[0], sizeof(mem));
@@ -333,6 +341,7 @@ begin
          end
          else break;
       end; //while 1=1 do
+    log(inttostr(gettickcount-before)+' ms');
     closehandle(hfile);
     libssh2_sftp_close(sftp_handle);
     end;

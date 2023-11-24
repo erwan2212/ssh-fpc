@@ -92,6 +92,7 @@ wsadata:TWSADATA;
 err:longint;
 hostaddr:u_long;
 sin:sockaddr_in;
+HostEnt:PHostEnt;
 begin
   result:=false;
   //
@@ -99,6 +100,13 @@ begin
   if(err <> 0) then raise exception.Create ('WSAStartup failed with error: '+inttostr(err));
   //
   hostaddr := inet_addr(pchar(host));
+  //not an ip? lets try to resolve hostname
+  if hostaddr = INADDR_NONE then
+    begin
+    HostEnt:=gethostbyname(pchar(host));
+    if HostEnt <> nil then hostaddr:=Integer(Pointer(HostEnt^.h_addr^)^);
+    end;
+  //  
   //
   sock_ := socket(AF_INET, SOCK_STREAM, 0);
   //
@@ -433,6 +441,7 @@ begin
     log('Forwarding connection from here to remote '+ shost+':'+inttostr(sport)+' '+ remote_desthost+':'+inttostr(remote_destport));
 
     channel := libssh2_channel_direct_tcpip_ex(session, pchar(remote_desthost),remote_destport, pchar(shost), sport);
+    //channel := libssh2_channel_direct_tcpip(session, pchar(remote_desthost),remote_destport);
 
     if channel=nil then raise exception.create('Could not open the direct-tcpip channel!'
                               +#13#10+'(Note that this can be a problem at the server!'

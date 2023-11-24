@@ -9,8 +9,7 @@
         <Filename Value="ssh.lpr"/>
         <IsPartOfProject Value="True"/>
         <IsVisibleTab Value="True"/>
-        <TopLine Value="913"/>
-        <CursorPos Y="918"/>
+        <CursorPos X="49" Y="18"/>
         <UsageCount Value="200"/>
         <Loaded Value="True"/>
       </Unit0>
@@ -21,7 +20,7 @@
         <WindowIndex Value="-1"/>
         <TopLine Value="-1"/>
         <CursorPos X="-1" Y="-1"/>
-        <UsageCount Value="182"/>
+        <UsageCount Value="185"/>
       </Unit1>
       <Unit2>
         <Filename Value="opensslutils.pas"/>
@@ -30,20 +29,20 @@
         <EditorIndex Value="-1"/>
         <TopLine Value="598"/>
         <CursorPos Y="612"/>
-        <UsageCount Value="63"/>
+        <UsageCount Value="66"/>
       </Unit2>
       <Unit3>
         <Filename Value="utils.pas"/>
         <IsPartOfProject Value="True"/>
-        <EditorIndex Value="1"/>
-        <CursorPos X="23" Y="13"/>
-        <UsageCount Value="63"/>
+        <EditorIndex Value="2"/>
+        <UsageCount Value="66"/>
         <Loaded Value="True"/>
       </Unit3>
       <Unit4>
         <Filename Value="libssh2.pas"/>
-        <EditorIndex Value="2"/>
-        <CursorPos X="10" Y="905"/>
+        <EditorIndex Value="1"/>
+        <TopLine Value="689"/>
+        <CursorPos X="41" Y="707"/>
         <UsageCount Value="100"/>
         <Loaded Value="True"/>
       </Unit4>
@@ -73,20 +72,20 @@
     <JumpHistory Count="3" HistoryIndex="2">
       <Position1>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="1028" Column="7" TopLine="1009"/>
+        <Caret Line="936" Column="33" TopLine="951"/>
       </Position1>
       <Position2>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="1028" Column="7" TopLine="1024"/>
+        <Caret Line="374" Column="38" TopLine="945"/>
       </Position2>
       <Position3>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="947" TopLine="938"/>
+        <Caret Line="332" Column="66" TopLine="416"/>
       </Position3>
     </JumpHistory>
   </ProjectSession>
   <Debugging>
-    <BreakPoints Count="2">
+    <BreakPoints Count="1">
       <Item1>
         <Kind Value="bpkSource"/>
         <WatchScope Value="wpsLocal"/>
@@ -94,13 +93,6 @@
         <Source Value="ssh.lpr"/>
         <Line Value="179"/>
       </Item1>
-      <Item2>
-        <Kind Value="bpkSource"/>
-        <WatchScope Value="wpsLocal"/>
-        <WatchKind Value="wpkWrite"/>
-        <Source Value="ssh.lpr"/>
-        <Line Value="360"/>
-      </Item2>
     </BreakPoints>
   </Debugging>
 </CONFIG>
