@@ -40,8 +40,10 @@ type
 var
 
   bNewString:boolean;
-  ssend,encrypted:string;
+  ssend,input:string;
   delay:integer;
+  //console_output_type:dword;
+  inhandle:handle;
   //
   host,username,password,command,pty,privatekey,publickey,cert,filename,remote_filename:string;
   port:integer=22;
@@ -52,6 +54,7 @@ var
   //
   cmd: TCommandLineReader;
 
+  //function AttachConsole(dwProcessId: DWORD): Bool; stdcall; external KERNEL32 name 'AttachConsole';
 
 { TReadThread }
 
@@ -533,6 +536,7 @@ var
    buflen,i:integer;
    commands:TArrayStr ;
 begin
+log('execpty');
 log('libssh2_channel_request_pty...');
 //vt100, vt102, vt220, and xterm -- vanilla
 if libssh2_channel_request_pty(channel_, 'vanilla')<>0 then
@@ -583,6 +587,7 @@ var
    buffer:array[0..8192-1] of char;
    buflen:integer;
 begin
+log('exec');
 //libssh2_channel_set_blocking(channel,0);
 log('libssh2_channel_exec...');
 if libssh2_channel_exec(channel_ ,pchar(command_))<>0 then log('cannot libssh2_channel_exec',1)
@@ -602,7 +607,10 @@ procedure shell(channel_:PLIBSSH2_CHANNEL);
 var
    s:string;
    ReadThread:TReadThread;
+   //
+   hin:thandle;
 begin
+log('shell');
 {/* Request a terminal with 'vanilla' terminal emulation
 * See /etc/termcap for more options
 */}
@@ -623,13 +631,23 @@ if libssh2_channel_shell(channel_)<>0 then
    end;
 ReadThread:=TReadThread.Create(channel_);
 ReadThread.Resume;
-while true do
+//lets read from CONIN$ in case std_input has been redirected
+hin:=CreateFile('CONIN$',GENERIC_READ or GENERIC_WRITE,FILE_SHARE_READ,nil,OPEN_EXISTING,0,0);
+//
+
+   while true do
    begin
-   readln(s);
-   if s='exit' then break;
-   ssend:=s+LineEnding;
+   //readln(s); //reading directly from conin$
+   zeromemory(@mem_[0],length(mem_));
+   ReadFile(hin, mem_[0],1024,size_,nil );
+   s:=strpas(@mem_[0]);
+   if copy(s,1,4)='exit' then break;
+   //ssend:=s+LineEnding;
+   ssend:=s;
    bNewString:=true;
    end;
+log('break');
+closehandle(hin);
 ReadThread.Terminate;
 end;
 
@@ -798,7 +816,8 @@ try
   log('remote_filename:'+remote);
   //channel := libssh2_scp_send(session, pansichar(remote_filename), integer(0777),size_t(fsize));
   //libssh2_session_set_blocking(session, 1);
-  channel :=libssh2_scp_send64(session,pansichar(remote), $102,size_t(fsize),0,0);
+  //channel :=libssh2_scp_send64(session,pansichar(remote), $102,size_t(fsize),0,0);
+  channel :=libssh2_scp_send64(session,pansichar(remote), 402,size_t(fsize),0,0);
 
   if not assigned(channel) then
     begin
@@ -917,14 +936,17 @@ begin
       log('Cannot open channel',1);
       exit;
       end;
+
     //shell mode
     if command='' then shell(channel);
+
     //exec mode
     if command<>'' then
     begin
       if pty<>'true' then exec(channel,command);
       if pty='true' then execpty(channel,command);
     end;//if command<>'' then
+
     //
     libssh2_channel_free(channel);
     libssh2_session_disconnect(session,'bye');
@@ -963,6 +985,27 @@ begin
   cmd.declareString('remote_filename', 'remote filename');
   //
   cmd.parse(cmdline);
+
+  //
+
+  //FILE_TYPE_DISK : to a file
+  //FILE_TYPE_CHAR : to output console
+  //FILE_TYPE_PIPE : to a pipe
+
+  inhandle := GetStdHandle(STD_INPUT_HANDLE);
+  if GetFileType(inhandle) <> FILE_TYPE_CHAR then
+       begin
+       //at this stage, your process console input has been redirected, permanently...
+       input:='';
+       ZeroMemory(@mem_ [0],length(mem_));
+       while Readfile(inhandle,mem_[0],length(mem_),size_ ,nil) =true do
+               begin
+               if size_=0 then exit;
+               input:=input+strpas(pchar(@mem_[0]));
+               ZeroMemory(@mem_[0],length(mem_));
+               end;
+       //writeln(input);
+       end; //if GetFileType(inhandle) <> FILE_TYPE_CHAR then
 
   debug:= cmd.readString('debug')='true';
 
@@ -1013,6 +1056,7 @@ begin
 
 
  //
+  if input<>'' then command:=stringreplace(input,'"','',[rfReplaceAll, rfIgnoreCase])+LineEnding ;
   main;
 end.
 
