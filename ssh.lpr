@@ -721,10 +721,11 @@ hfile:thandle=thandle(-1);
 fsize:int64=0;
 size:dword=0;
 i:integer;
-mem:array [0..4096-1] of char;
+mem:array [0..8192-1] of char;
 errmsg:pchar;
 mode:integer;
 begin
+log('scp_write');
 result:=false;
 //
 try
@@ -754,16 +755,39 @@ try
   log(strpas(userauthlist));
 
   //
-  log('libssh2_userauth_password...');
-  if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
-    begin
-    log('Authentication by password failed',1);
-    exit;
-    end;
-  log('Authentication succeeded');
+  if ((privatekey='') and (publickey='')) and (password<>'') then
+      begin
+      log('libssh2_userauth_password...');
+      if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
+        begin
+        log('Authentication by password failed',1);
+        exit;
+        end;
+      log('Authentication succeeded');
+      end;
 
-
-
+  if (privatekey<>'') or (publickey<>'') then
+      begin
+      log('libssh2_userauth_publickey_fromfile');
+      //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
+      //public key can be derived from private key so public key can be skipped (good for security...)
+      //not relevant here but chmod 0700 id_rsa on a linux ssh client
+      //not relevant but from a ssh linux client you can do:
+      //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
+      log('private key:'+privatekey );
+      log('public key:'+publickey  );
+      if (privatekey<>'') and (publickey='') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(publickey)},pchar(privatekey),nil);
+      if (publickey<>'') and (privatekey='') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),nil{pchar(privatekey)},nil);
+      if (publickey<>'') and (privatekey<>'') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),pchar(privatekey),nil);
+      if i<>0 then
+        begin
+        log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
+        exit;
+        end;
+      end; //if not FileExists (password) then
   //
   log('local_filename:'+local);
   hfile := CreateFile(pchar(local), GENERIC_READ , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING , FILE_ATTRIBUTE_NORMAL, 0);
@@ -963,7 +987,7 @@ begin
 
   if cmd.existsProperty ('put') then
     begin
-    if remote_filename='' then remote_filename :=filename;
+    if remote_filename='' then remote_filename :=extractfilename(filename);
     if scp_write(filename,remote_filename)=true
        then log('ok',1)
        else log('not ok',1);
