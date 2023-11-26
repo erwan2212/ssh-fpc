@@ -717,6 +717,140 @@ log('libssh2_init...');
     log('Assuming known host...');
 end;
 
+
+function scp_read(local,remote:string):boolean;
+var
+sock:tsocket;
+session:PLIBSSH2_SESSION=nil;
+channel:PLIBSSH2_CHANNEL=nil;
+userauthlist:PAnsiChar;
+hfile:thandle=thandle(-1);
+fsize:int64=0;
+size:dword=0;
+i:integer;
+mem:array [0..8192-1] of char;
+errmsg:pchar;
+mode:integer;
+stat:struct_stat;
+total:longint=0;
+begin
+log('scp_write');
+result:=false;
+//
+try
+  if init_socket(sock)=false then begin writeln('socket failed');exit;end; ;
+  except
+  on e:exception do
+     begin
+     log(e.Message,1 );
+     exit;
+     end;
+  end;
+  //mode:=1;
+  //ioctlsocket (sock, FIONBIO, @mode);
+  //
+  session:=init_session(sock);
+  if session=nil then
+    begin
+    log('session is null',1);
+    exit;
+    end;
+
+  //libssh2_trace(session, 0); //TRACE_LIBSSH2 //only if build in debug mode...
+
+  //optional : only to check auth methods
+  log('libssh2_userauth_list...');
+  userauthlist := libssh2_userauth_list(session, pchar(username), strlen(pchar(username)));
+  log(strpas(userauthlist));
+
+  //
+  if ((privatekey='') and (publickey='')) and (password<>'') then
+      begin
+      log('libssh2_userauth_password...');
+      if libssh2_userauth_password(session, pchar(username), pchar(password))<>0 then
+        begin
+        log('Authentication by password failed',1);
+        exit;
+        end;
+      log('Authentication succeeded');
+      end;
+
+  if (privatekey<>'') or (publickey<>'') then
+      begin
+      log('libssh2_userauth_publickey_fromfile');
+      //you need the private key on your client and the public key to be added to .ssh/authorized_keys on the server
+      //public key can be derived from private key so public key can be skipped (good for security...)
+      //not relevant here but chmod 0700 id_rsa on a linux ssh client
+      //not relevant but from a ssh linux client you can do:
+      //cat ~/.ssh/id_rsa.pub | ssh user@server 'cat >> .ssh/authorized_keys'
+      log('private key:'+privatekey );
+      log('public key:'+publickey  );
+      if (privatekey<>'') and (publickey='') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), nil{pchar(publickey)},pchar(privatekey),nil);
+      if (publickey<>'') and (privatekey='') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),nil{pchar(privatekey)},nil);
+      if (publickey<>'') and (privatekey<>'') then
+          i:= libssh2_userauth_publickey_fromfile(session, pchar(username), pchar(publickey),pchar(privatekey),nil);
+      if i<>0 then
+        begin
+        log('libssh2_userauth_publickey_fromfile failed:'+inttostr(i),1);
+        exit;
+        end;
+      end; //if not FileExists (password) then
+  //
+  log('local_filename:'+local);
+  hfile := CreateFile(pchar(local), GENERIC_READ or generic_write , FILE_SHARE_READ or FILE_SHARE_WRITE, nil, CREATE_ALWAYS , FILE_ATTRIBUTE_NORMAL, 0);
+  if hfile=thandle(-1) then begin log('invalid handle',1);exit;end;
+
+  //* Send a file via scp. The mode parameter must only have permissions! */
+  log('remote_filename:'+remote);
+  //libssh2_session_set_blocking(session, 1);
+  channel :=libssh2_scp_recv(session,pansichar(remote),stat);
+  log('size:'+inttostr(stat.st_size ));
+
+  if not assigned(channel) then
+    begin
+    libssh2_session_last_error(session, errmsg, i, 0);
+    log('error:'+strpas(errmsg));
+    log('Cannot open channel',1);
+    exit;
+    end;
+
+
+  while 1=1 do
+        begin
+        //* read the same data over and over, until error or completion */
+        i:= libssh2_channel_read(channel, @mem[0], length(mem));
+        if i<0 then begin log('libssh2_channel_read error',1);break;end;
+        log('libssh2_channel_read:'+inttostr(i)+' bytes');
+        writefile(hfile,mem[0],i,size,nil);
+        inc(total,size);
+        if total>=stat.st_size then break;
+        if size<=0 then break;
+        end; //while 1=1 do
+      closehandle(hfile);
+
+//
+log('Sending EOF');
+libssh2_channel_send_eof(channel);
+log('Waiting for EOF');
+libssh2_channel_wait_eof(channel);
+log('Waiting for channel to close');
+libssh2_channel_wait_closed(channel);
+libssh2_channel_free(channel);
+
+    if (session<>nil) then
+      begin
+      libssh2_session_disconnect(session, 'Normal Shutdown');
+      libssh2_session_free(session);
+      end;
+
+    closesocket(sock);
+    libssh2_exit();
+
+result:=true;
+end;
+
 {
 const int _O_RDONLY = 0x0000;  /* open for reading only */
 const int _O_WRONLY = 0x0001;  /* open for writing only */
@@ -981,6 +1115,7 @@ begin
   cmd.declareint('destport', 'forward mode (local or reverse');
   //
   cmd.declareflag('put', 'secure copy a file to a remote ssh host');
+  cmd.declareflag('get', 'secure copy a file from a remote ssh host');
   cmd.declareString('filename', 'local filename');
   cmd.declareString('remote_filename', 'remote filename');
   //
@@ -1032,6 +1167,15 @@ begin
     begin
     if remote_filename='' then remote_filename :=extractfilename(filename);
     if scp_write(filename,remote_filename)=true
+       then log('ok',1)
+       else log('not ok',1);
+    exit;
+    end;
+
+  if cmd.existsProperty ('get') then
+    begin
+    if filename='' then filename :=extractfilename(remote_filename);
+    if scp_read(filename,remote_filename)=true
        then log('ok',1)
        else log('not ok',1);
     exit;

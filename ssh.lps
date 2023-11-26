@@ -4,13 +4,13 @@
     <PathDelim Value="\"/>
     <Version Value="10"/>
     <BuildModes Active="Default"/>
-    <Units Count="10">
+    <Units Count="11">
       <Unit0>
         <Filename Value="ssh.lpr"/>
         <IsPartOfProject Value="True"/>
         <IsVisibleTab Value="True"/>
-        <TopLine Value="1023"/>
-        <CursorPos Y="1055"/>
+        <TopLine Value="721"/>
+        <CursorPos X="15" Y="735"/>
         <UsageCount Value="200"/>
         <Loaded Value="True"/>
       </Unit0>
@@ -30,20 +30,20 @@
         <EditorIndex Value="-1"/>
         <TopLine Value="598"/>
         <CursorPos Y="612"/>
-        <UsageCount Value="109"/>
+        <UsageCount Value="111"/>
       </Unit2>
       <Unit3>
         <Filename Value="utils.pas"/>
         <IsPartOfProject Value="True"/>
         <EditorIndex Value="3"/>
-        <UsageCount Value="109"/>
+        <UsageCount Value="111"/>
         <Loaded Value="True"/>
       </Unit3>
       <Unit4>
         <Filename Value="libssh2.pas"/>
         <EditorIndex Value="2"/>
-        <TopLine Value="432"/>
-        <CursorPos X="83" Y="436"/>
+        <TopLine Value="877"/>
+        <CursorPos X="46" Y="896"/>
         <UsageCount Value="100"/>
         <Loaded Value="True"/>
       </Unit4>
@@ -71,11 +71,10 @@
       </Unit7>
       <Unit8>
         <Filename Value="C:\FPC\3.0.0\source\rtl\win\wininc\struct.inc"/>
-        <EditorIndex Value="1"/>
+        <EditorIndex Value="-1"/>
         <TopLine Value="2939"/>
         <CursorPos X="6" Y="2957"/>
         <UsageCount Value="14"/>
-        <Loaded Value="True"/>
       </Unit8>
       <Unit9>
         <Filename Value="C:\FPC\3.0.0\source\rtl\objpas\sysutils\sysstrh.inc"/>
@@ -84,127 +83,135 @@
         <CursorPos X="10" Y="218"/>
         <UsageCount Value="10"/>
       </Unit9>
+      <Unit10>
+        <Filename Value="C:\FPC\3.0.0\source\rtl\win\wininc\defines.inc"/>
+        <EditorIndex Value="1"/>
+        <TopLine Value="431"/>
+        <CursorPos X="19" Y="447"/>
+        <UsageCount Value="10"/>
+        <Loaded Value="True"/>
+      </Unit10>
     </Units>
     <JumpHistory Count="30" HistoryIndex="29">
       <Position1>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="631" Column="22" TopLine="610"/>
+        <Caret Line="640" Column="42" TopLine="624"/>
       </Position1>
       <Position2>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="632" TopLine="606"/>
+        <Caret Line="641" Column="23" TopLine="624"/>
       </Position2>
       <Position3>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="974" Column="3" TopLine="972"/>
+        <Caret Line="14" Column="113" TopLine="9"/>
       </Position3>
       <Position4>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="45" Column="5" TopLine="27"/>
+        <Caret Line="641" Column="13" TopLine="613"/>
       </Position4>
       <Position5>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="999" Column="3" TopLine="968"/>
+        <Caret Line="768" Column="13" TopLine="740"/>
       </Position5>
       <Position6>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="611" Column="16" TopLine="588"/>
+        <Caret Line="819" Column="24" TopLine="791"/>
       </Position6>
       <Position7>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="64" Column="107" TopLine="58"/>
+        <Caret Line="886" Column="15" TopLine="857"/>
       </Position7>
       <Position8>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="640" Column="12" TopLine="612"/>
+        <Caret Line="993" Column="35" TopLine="964"/>
       </Position8>
       <Position9>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="825" Column="17" TopLine="797"/>
+        <Caret Line="641" Column="28" TopLine="624"/>
       </Position9>
       <Position10>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="640" Column="42" TopLine="624"/>
+        <Caret Line="1025" Column="17" TopLine="998"/>
       </Position10>
       <Position11>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="641" Column="23" TopLine="624"/>
+        <Caret Line="649" Column="18" TopLine="620"/>
       </Position11>
       <Position12>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="14" Column="113" TopLine="9"/>
+        <Caret Line="994" TopLine="972"/>
       </Position12>
       <Position13>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="641" Column="13" TopLine="613"/>
+        <Caret Line="43" Column="9" TopLine="25"/>
       </Position13>
       <Position14>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="768" Column="13" TopLine="740"/>
+        <Caret Line="993" Column="18" TopLine="979"/>
       </Position14>
       <Position15>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="819" Column="24" TopLine="791"/>
+        <Caret Line="18" Column="58" TopLine="11"/>
       </Position15>
       <Position16>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="886" Column="15" TopLine="857"/>
+        <Caret Line="42" Column="13" TopLine="16"/>
       </Position16>
       <Position17>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="993" Column="35" TopLine="964"/>
+        <Caret Line="74" Column="23" TopLine="54"/>
       </Position17>
       <Position18>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="641" Column="28" TopLine="624"/>
+        <Caret Line="640" Column="38" TopLine="622"/>
       </Position18>
       <Position19>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="1025" Column="17" TopLine="998"/>
+        <Caret Line="57" Column="5" TopLine="28"/>
       </Position19>
       <Position20>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="649" Column="18" TopLine="620"/>
+        <Caret Line="830" Column="62" TopLine="801"/>
       </Position20>
       <Position21>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="994" TopLine="972"/>
+        <Caret Line="644" Column="25" TopLine="1023"/>
       </Position21>
       <Position22>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="43" Column="9" TopLine="25"/>
+        <Caret Line="1044" Column="32" TopLine="1011"/>
       </Position22>
       <Position23>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="993" Column="18" TopLine="979"/>
+        <Caret Line="998" Column="84" TopLine="980"/>
       </Position23>
       <Position24>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="18" Column="58" TopLine="11"/>
+        <Caret Line="721" Column="18" TopLine="791"/>
       </Position24>
       <Position25>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="42" Column="13" TopLine="16"/>
+        <Caret Line="1175" Column="16" TopLine="1154"/>
       </Position25>
       <Position26>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="74" Column="23" TopLine="54"/>
+        <Caret Line="808" Column="60" TopLine="791"/>
       </Position26>
       <Position27>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="640" Column="38" TopLine="622"/>
+        <Caret Line="822" Column="17" TopLine="800"/>
       </Position27>
       <Position28>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="57" Column="5" TopLine="28"/>
+        <Caret Line="823" Column="56" TopLine="806"/>
       </Position28>
       <Position29>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="830" Column="62" TopLine="801"/>
+        <Caret Line="1107" Column="30" TopLine="1085"/>
       </Position29>
       <Position30>
         <Filename Value="ssh.lpr"/>
-        <Caret Line="644" Column="25" TopLine="1023"/>
+        <Caret Line="803" Column="117" TopLine="782"/>
       </Position30>
     </JumpHistory>
   </ProjectSession>
