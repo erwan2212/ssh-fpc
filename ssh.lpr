@@ -584,8 +584,10 @@ end;
 
 procedure exec(channel_:PLIBSSH2_CHANNEL;command_:string);
 var
-   buffer:array[0..8192-1] of char;
+   buffer:array[0..8192-1] of byte;
    buflen:integer;
+   hout:thandle;
+   written:dword;
 begin
 log('exec');
 //libssh2_channel_set_blocking(channel,0);
@@ -593,13 +595,18 @@ log('libssh2_channel_exec...');
 if libssh2_channel_exec(channel_ ,pchar(command_))<>0 then log('cannot libssh2_channel_exec',1)
 else
 begin
+//hout:=CreateFile('CONOUT$',GENERIC_READ or GENERIC_WRITE,FILE_SHARE_READ,nil,OPEN_EXISTING,0,0); //direct to console
+//hout:=CreateFile('test2.pcap',GENERIC_READ or GENERIC_WRITE,FILE_SHARE_READ,nil,CREATE_ALWAYS,0,0); //direct to a file
   while 1=1 do
   begin
   buflen:=libssh2_channel_read(channel_,@buffer[0],length(buffer));
   //writeln(buflen);
-  if buflen>0 then write(copy(buffer,0,buflen)); // else log('no output',1);
-  if buflen<=0 then break;
+  //if buflen>0 then writefile(hout,buffer[0],buflen,written,nil);
+  //if buflen>0 then write(copy(buffer,0,buflen)); //does not fully(?) handle pipe out // else log('no output',1);
+  if buflen>0 then writefile(GetStdHandle(STD_OUTPUT_HANDLE),buffer[0],buflen,written,nil);
+  if buflen<=0 then break; // or =LIBSSH2_ERROR_EAGAIN ?
   end;//while
+//closehandle(hout);
 end;//if libssh2_channel_exec
 end;
 
@@ -713,7 +720,7 @@ log('libssh2_init...');
       tmp:=tmp+inttohex(ord(fingerprint[i]),2)+ ':';
       //i:=i+1;
       end;
-    log(tmp);
+    if tmp<>'' then log(tmp);
     log('Assuming known host...');
 end;
 
@@ -1077,6 +1084,8 @@ begin
     //exec mode
     if command<>'' then
     begin
+      sleep(delay); //when piping out, leave some time for the software to listen?
+      //readln;
       if pty<>'true' then exec(channel,command);
       if pty='true' then execpty(channel,command);
     end;//if command<>'' then
@@ -1126,6 +1135,8 @@ begin
   //FILE_TYPE_DISK : to a file
   //FILE_TYPE_CHAR : to output console
   //FILE_TYPE_PIPE : to a pipe
+
+  //SetConsoleCP (850);
 
   inhandle := GetStdHandle(STD_INPUT_HANDLE);
   if GetFileType(inhandle) <> FILE_TYPE_CHAR then
